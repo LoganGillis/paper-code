@@ -12,6 +12,7 @@ import type { IconColorId } from '@shared/icons'
 import { ICON_ACCENT } from '@shared/icons'
 import { FindBar } from '@/components/find-bar'
 import { useTheme } from '@/components/theme-provider'
+import { cn } from '@/lib/utils'
 
 function paperHighlight(dark: boolean): HighlightStyle {
   return HighlightStyle.define([
@@ -108,7 +109,9 @@ export function CodeEditor({
   active = true,
   accent = 'slate',
   onRun,
-  restoreFocus = false
+  restoreFocus = false,
+  compact = false,
+  readOnly = false
 }: {
   value: string
   language: 'javascript' | 'typescript'
@@ -117,6 +120,8 @@ export function CodeEditor({
   accent?: IconColorId
   onRun?: () => void
   restoreFocus?: boolean
+  compact?: boolean
+  readOnly?: boolean
 }): React.JSX.Element {
   const { theme } = useTheme()
   const dark = theme === 'dark'
@@ -173,7 +178,7 @@ export function CodeEditor({
   }, [active, restoreFocus, view])
 
   useEffect(() => {
-    if (!active) return
+    if (!active || compact) return
     const onKey = (event: KeyboardEvent): void => {
       if (!(event.metaKey || event.ctrlKey)) return
       if (event.key === 'Enter') {
@@ -182,6 +187,7 @@ export function CodeEditor({
         onRun?.()
         return
       }
+      if (compact) return
       if (event.key.toLowerCase() === 'f' || event.key.toLowerCase() === 'h') {
         event.preventDefault()
         if (view) {
@@ -197,25 +203,28 @@ export function CodeEditor({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [active, onRun, view])
+  }, [active, compact, onRun, view])
 
   return (
-    <div className="relative h-full min-h-0">
-      <FindBar
-        view={view}
-        open={findOpen}
-        replaceMode={replaceMode}
-        query={query}
-        replace={replace}
-        onQuery={setQuery}
-        onReplace={setReplace}
-        onOpenChange={setFindOpen}
-        onReplaceMode={setReplaceMode}
-      />
+    <div className={cn('relative min-h-0', compact ? 'min-h-[8.5rem]' : 'h-full')}>
+      {compact ? null : (
+        <FindBar
+          view={view}
+          open={findOpen}
+          replaceMode={replaceMode}
+          query={query}
+          replace={replace}
+          onQuery={setQuery}
+          onReplace={setReplace}
+          onOpenChange={setFindOpen}
+          onReplaceMode={setReplaceMode}
+        />
+      )}
       <CodeMirror
         value={value}
-        height="100%"
-        className="h-full min-h-0"
+        height={compact ? 'auto' : '100%'}
+        className={compact ? 'min-h-[8.5rem]' : 'h-full min-h-0'}
+        editable={!readOnly}
         basicSetup={{
           foldGutter: false,
           highlightActiveLineGutter: false,

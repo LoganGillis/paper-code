@@ -38,7 +38,7 @@ export function EditableLabel({
       autoFocus
       value={draft}
       className={cn(
-        'min-w-0 flex-1 rounded-sm bg-paper px-1 text-inherit outline-none ring-1 ring-ring',
+        'min-w-0 flex-1 bg-transparent p-0 text-inherit outline-none placeholder:text-muted-foreground/70',
         className
       )}
       onClick={(event) => event.stopPropagation()}

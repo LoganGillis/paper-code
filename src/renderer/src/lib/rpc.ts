@@ -15,7 +15,10 @@ async function invoke<T>(path: string, input?: unknown): Promise<T> {
 export const api: AppApi = {
   app: {
     getConfig: () => invoke('app.getConfig'),
-    pickCsv: () => invoke('app.pickCsv')
+    pickCsv: () => invoke('app.pickCsv'),
+    getUpdateStatus: () => invoke('app.getUpdateStatus'),
+    checkForUpdates: () => invoke('app.checkForUpdates'),
+    quitAndInstall: () => invoke('app.quitAndInstall')
   },
   spaces: {
     list: () => invoke('spaces.list'),

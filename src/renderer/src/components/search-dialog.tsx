@@ -10,6 +10,8 @@ import {
   CommandItem,
   CommandList
 } from '@/components/ui/command'
+import { useRef } from 'react'
+import { wantsNewTab } from '@/lib/platform'
 import { useWorkspace } from '@/lib/workspace'
 
 type SearchHit =
@@ -73,6 +75,7 @@ export function SearchDialog({
   onOpenChange: (open: boolean) => void
 }): React.JSX.Element {
   const { trees, selectPage, selectFolder, toggleSpace, openSpaceIds } = useWorkspace()
+  const openInNewTab = useRef(false)
   const items = Object.values(trees).flatMap(collectHits)
   const pages = items.filter((item) => item.kind === 'page')
   const folders = items.filter((item) => item.kind === 'folder')
@@ -88,8 +91,13 @@ export function SearchDialog({
             <CommandItem
               key={item.page.id}
               value={`${displayTitle(item.page.title)} ${item.spaceName} ${item.page.type} page`}
+              onPointerDown={(event) => {
+                openInNewTab.current = wantsNewTab(event)
+              }}
               onSelect={() => {
-                void selectPage(item.page.id, item.spaceId)
+                const newTab = openInNewTab.current
+                openInNewTab.current = false
+                void selectPage(item.page.id, item.spaceId, { newTab })
                 onOpenChange(false)
               }}
             >
@@ -112,7 +120,7 @@ export function SearchDialog({
                   onOpenChange(false)
                 }}
               >
-                <IconBadge icon={item.icon} color={item.iconColor} />
+                <IconBadge icon={item.icon} color={item.iconColor} variant="plain" />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 <span className="text-xs text-muted-foreground">{item.spaceName}</span>
               </CommandItem>
@@ -131,7 +139,7 @@ export function SearchDialog({
                   onOpenChange(false)
                 }}
               >
-                <IconBadge icon={item.icon} color={item.iconColor} />
+                <IconBadge icon={item.icon} color={item.iconColor} variant="plain" />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
               </CommandItem>
             ))}

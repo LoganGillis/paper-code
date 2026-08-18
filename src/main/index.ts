@@ -4,8 +4,10 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getPrisma } from './db'
 import { registerRpc } from './rpc'
-import { ensureHelperDemos } from './helper-demos'
 import { seedIfEmpty } from './seed'
+import { checkForUpdates, initUpdates } from './updates'
+
+app.setName('Paper')
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -34,7 +36,7 @@ function createWindow(): BrowserWindow {
           }
         }),
     backgroundColor: '#f7f5f1',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false
@@ -73,17 +75,22 @@ function installMenu(): void {
     ...(isMac
       ? [
           {
-            label: app.name,
+            label: 'Paper',
             submenu: [
-              { role: 'about' as const },
+              { role: 'about' as const, label: 'About Paper' },
+              { type: 'separator' as const },
+              {
+                label: 'Check for Updates…',
+                click: () => checkForUpdates()
+              },
               { type: 'separator' as const },
               { role: 'services' as const },
               { type: 'separator' as const },
-              { role: 'hide' as const },
+              { role: 'hide' as const, label: 'Hide Paper' },
               { role: 'hideOthers' as const },
               { role: 'unhide' as const },
               { type: 'separator' as const },
-              { role: 'quit' as const }
+              { role: 'quit' as const, label: 'Quit Paper' }
             ]
           }
         ]
@@ -101,11 +108,31 @@ function installMenu(): void {
           }
         },
         { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', role: 'close' },
-        ...(!isMac ? [{ type: 'separator' as const }, { role: 'quit' as const }] : [])
+        ...(!isMac
+          ? [
+              { type: 'separator' as const },
+              { label: 'Check for Updates…', click: () => checkForUpdates() },
+              { type: 'separator' as const },
+              { role: 'quit' as const, label: 'Quit Paper' }
+            ]
+          : [])
       ]
     },
     { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'togglefullscreen' as const },
+        ...(is.dev
+          ? [
+              { type: 'separator' as const },
+              { role: 'reload' as const },
+              { role: 'forceReload' as const },
+              { role: 'toggleDevTools' as const }
+            ]
+          : [])
+      ]
+    },
     {
       label: 'Window',
       submenu: [
@@ -121,8 +148,18 @@ function installMenu(): void {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.example.desktop-app')
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(icon)
+  }
+  electronApp.setAppUserModelId('com.logangillis.paper')
+  app.setAboutPanelOptions({
+    applicationName: 'Paper',
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    copyright: 'Copyright © 2026 Logan Gillis'
+  })
   installMenu()
+  initUpdates()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -131,9 +168,8 @@ app.whenReady().then(async () => {
   registerRpc()
 
   try {
-    getPrisma()
-    await seedIfEmpty()
-    await ensureHelperDemos()
+    const prisma = getPrisma()
+    await seedIfEmpty(prisma)
   } catch (error) {
     console.error('Failed to initialize the database', error)
   }

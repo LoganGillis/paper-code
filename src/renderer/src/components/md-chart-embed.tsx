@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { defaultChartSpec, inspectColumns, type ChartKind, type ChartSpec } from '@/lib/chart-data'
 import { api } from '@/lib/rpc'
 import { filterPageHits, findPageHit } from '@/lib/pages'
+import { wantsNewTab } from '@/lib/platform'
 import { useWorkspace } from '@/lib/workspace'
 
 export const ChartEmbed = Node.create({
@@ -136,7 +137,9 @@ function ChartEmbedView({ node, updateAttributes, editor }: ReactNodeViewProps):
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => void selectPage(hit.page.id, hit.spaceId)}
+              onClick={(event) =>
+                void selectPage(hit.page.id, hit.spaceId, { newTab: wantsNewTab(event) })
+              }
             >
               Open
             </Button>

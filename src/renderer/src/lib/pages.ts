@@ -1,4 +1,5 @@
 import type { FolderNode, PageSummary, PageType, SpaceTree } from '@shared/api'
+import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
 import { displayTitle } from '@shared/titles'
 
 export type PageHit = {
@@ -27,7 +28,13 @@ export function collectPages(trees: Record<string, SpaceTree>): PageHit[] {
 }
 
 export function findPageHit(trees: Record<string, SpaceTree>, pageId: string): PageHit | undefined {
-  return collectPages(trees).find((item) => item.page.id === pageId)
+  const hit = collectPages(trees).find((item) => item.page.id === pageId)
+  if (hit) return hit
+  if (!isGuideDataPageId(pageId)) return undefined
+  const host = Object.values(trees)[0]?.space
+  const page = buildGuideDataPages(host?.id ?? '').find((item) => item.id === pageId)
+  if (!page) return undefined
+  return { page, spaceId: page.spaceId, spaceName: 'Guide' }
 }
 
 export function filterPageHits(

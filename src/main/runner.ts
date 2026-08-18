@@ -46,7 +46,8 @@ function evaluateModule(
   pages: Page[],
   logs: RunResult['logs'],
   visiting: Set<string>,
-  secrets: Record<string, string>
+  secrets: Record<string, string>,
+  spaces: Array<{ id: string; name: string }>
 ): unknown {
   if (page.type === 'csv') {
     return tableFromPage(page)
@@ -70,15 +71,15 @@ function evaluateModule(
     setInterval,
     clearInterval,
     require: (spec: string) => {
-      const target = resolvePage(spec, page, pages)
+      const target = resolvePage(spec, page, pages, spaces)
       if (!target) {
         throw new Error(`Cannot find module "${spec}"`)
       }
-      return evaluateModule(target, pages, logs, visiting, secrets)
+      return evaluateModule(target, pages, logs, visiting, secrets, spaces)
     }
   }
   installDateHelpers(sandbox)
-  installCsvHelpers(sandbox, { page, pages })
+  installCsvHelpers(sandbox, { page, pages, spaces })
   installSecretHelpers(sandbox, secrets)
   sandbox.exports = module.exports
   vm.runInNewContext(compiled, sandbox, { timeout: RUN_TIMEOUT_MS, displayErrors: true })
@@ -89,8 +90,14 @@ function evaluateModule(
 export async function executeSnippet(
   language: 'javascript' | 'typescript',
   source: string,
-  context: { page: Page; pages: Page[]; secrets?: Record<string, string> }
+  context: {
+    page: Page
+    pages: Page[]
+    spaces?: Array<{ id: string; name: string }>
+    secrets?: Record<string, string>
+  }
 ): Promise<RunResult> {
+  const spaces = context.spaces ?? []
   const logs: RunResult['logs'] = []
   const current: Page = { ...context.page, content: source, type: language }
 
@@ -106,7 +113,7 @@ export async function executeSnippet(
       setInterval,
       clearInterval,
       require: (spec: string) => {
-        const target = resolvePage(spec, current, context.pages)
+        const target = resolvePage(spec, current, context.pages, spaces)
         if (!target) {
           throw new Error(`Cannot find module "${spec}"`)
         }
@@ -115,12 +122,13 @@ export async function executeSnippet(
           context.pages,
           logs,
           new Set([current.id]),
-          context.secrets ?? {}
+          context.secrets ?? {},
+          spaces
         )
       }
     }
     installDateHelpers(sandbox)
-    installCsvHelpers(sandbox, { page: current, pages: context.pages })
+    installCsvHelpers(sandbox, { page: current, pages: context.pages, spaces })
     installSecretHelpers(sandbox, context.secrets ?? {})
     sandbox.exports = module.exports
 

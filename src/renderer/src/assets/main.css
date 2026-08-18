@@ -492,3 +492,53 @@
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+
+.desk-dots {
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--foreground) 11%, transparent) 1px,
+    transparent 1.2px
+  );
+  background-size: 22px 22px;
+  animation: desk-drift 48s linear infinite;
+}
+
+.desk-rules {
+  background-image: repeating-linear-gradient(
+    -18deg,
+    transparent,
+    transparent 13px,
+    color-mix(in oklab, var(--foreground) 4.5%, transparent) 13px,
+    color-mix(in oklab, var(--foreground) 4.5%, transparent) 14px
+  );
+  animation: desk-drift-rev 72s linear infinite;
+}
+
+.desk-spin-slow {
+  animation: desk-spin 36s linear infinite;
+}
+
+@keyframes desk-drift {
+  to {
+    background-position: 22px 22px;
+  }
+}
+
+@keyframes desk-drift-rev {
+  to {
+    background-position: -36px 20px;
+  }
+}
+
+@keyframes desk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk-dots,
+  .desk-rules,
+  .desk-spin-slow {
+    animation: none;
+  }
+}

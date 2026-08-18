@@ -23,30 +23,31 @@ Paper is a local notebook: spaces, folders, pages. The metaphor is a **desk**, n
 ## Tabs and pages
 
 - Multi-space tabs. Keep-alive panes (no remount flicker). Preserve editor focus when switching with the keyboard.
-- `⌘1`–`⌘9` switch tabs. `⌘W` closes a **tab**, not the window.
-- Closing the last tab shows the **desk** for the current space. Do not reopen Notes (or any first page).
+- Clicking a page **replaces** the current tab. Right-click **Open in new tab**, or middle-click, to add one. Middle-click a tab to close it.
+- `⌘1`–`⌘9` switch **user** tabs (desk is skipped). `⌘W` closes a **tab**, not the window.
+- The desk is a permanently pinned icon tab on the left of the strip. It cannot be closed.
+- Pages can be **archived**. Sidebar archive icon (next to Guide) toggles that view.
 - Page title + icon picker in the header (locked on the Guide).
 - Selection color is a translucent wash of the **page** accent (`--page-accent`).
 - Find/replace on code pages uses the custom FindBar, not CodeMirror’s default panel.
 
 ## Desk
 
-Empty tabs, or **Desk** at the top of a space tree.
+One root desk for the whole app. Pinned as an icon-only House tab (slate). Not in the sidebar tree.
 
-- Space icon + today’s date as the page title, weekday and clock underneath.
-- Week stamps (Monday start). Today uses the space icon-chip. A dot means that date already has a note.
-- Click a day: open or create `MMMM D, YYYY` in a **Journal** folder (created on first daily note, Calendar icon, space color).
-- Ruled capture line: Enter creates a Markdown page (active folder if any, else space root).
-- Recent list: last-updated pages as sidebar-style rows.
+- Today’s date as the page title, weekday and clock underneath.
+- Week stamps (Monday start). Today has a border. Days are not buttons.
+- Ruled capture line: Enter creates a Markdown page in the current space.
+- Recent list: last-updated pages across all spaces.
 
-Desk is virtual (`paper:desk:${spaceId}`). Not in the DB.
+Virtual id `paper:desk`. Not in the DB. Cannot be closed (`⌘W` is a no-op on it).
 
 ## Guide
 
 Book button, bottom-left of the sidebar. Opens as a normal Markdown tab that **cannot be edited**.
 
-- Virtual id `paper:guide`. Rebuilt from current trees so CSV embeds and page links resolve.
-- Title/icon static. No slash or wiki menus. Language toggle on run blocks disabled.
+- Virtual id `paper:guide`. Sample tables are hidden Guide CSVs (`paper:guide:orders`, `paper:guide:products`) so examples still run after the user deletes seed pages.
+- Title/icon static. No slash or wiki menus. Language toggle hidden on read-only run blocks.
 - Runnable examples still run (main synthesizes a page if `pageId` is missing).
 - Current section: **`$` helpers** only. Other sections later, on purpose.
 
@@ -62,8 +63,8 @@ Custom blocks:
 
 | Node | File | Notes |
 | --- | --- | --- |
-| `runnableCode` | `md-run-block.tsx` | JS/TS, Run with page accent, `⌘↵` |
-| `csvEmbed` | `md-csv-embed.tsx` | Preview a CSV page |
+| `runnableCode` | `md-run-block.tsx` | JS/TS, CodeMirror, Run with page accent |
+| `csvEmbed` | `md-csv-embed.tsx` | Full CSV editor (same as the page) |
 | `chartEmbed` | `md-chart-embed.tsx` | Chart a CSV page (kind / x / y attrs) |
 | `pageLink` | `md-page-link.tsx` | Inline link chip |
 
@@ -125,4 +126,4 @@ Appearance only (system / light / dark).
 
 ## Seed voice
 
-First space is often **Workshop**. Helper pages live under **Helpers** and **Data**. Do not delete those folders in seed logic without a replacement.
+First launch (`seedIfEmpty`) creates **Workshop** with Welcome, Notes/Scratch, Scripts/{hello,today,sales}, and Data/{orders,products,employees}, then opens **Welcome**. Scripts use `console.log` only — a leftover expression at the end of a file errors. Reset with `pnpm seed`. Helper test pages are not installed automatically.

@@ -42,6 +42,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     savePageContent,
     savePageDescription,
     updatePageAppearance,
+    changePageType,
     runningPageIds,
     setPageRunning,
     preserveEditorFocus
@@ -150,7 +151,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       ) : null}
 
       {isCsv ? (
-        <div className="flex min-h-0 flex-1 flex-col border-t border-border/50">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t border-border/50">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
             <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
               csv
@@ -185,7 +186,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
           {csvView === 'table' ? (
             <CsvEditor
               active={active}
-              content={page.content}
+              content={source || page.content}
               onChange={(next) => {
                 setSource(next)
                 saveContent(next)
@@ -209,9 +210,25 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       {isCode ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between border-t border-border/60 px-4 py-2">
-            <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
-              {page.type}
-            </p>
+            <div className="flex rounded-md bg-sidebar p-0.5">
+              {(['javascript', 'typescript'] as const).map((id) => (
+                <Button
+                  key={id}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className={cn(
+                    'h-6 px-2 text-[11px]',
+                    page.type === id && 'bg-paper text-foreground shadow-sm'
+                  )}
+                  onClick={() => {
+                    if (page.type !== id) void changePageType(page.id, id)
+                  }}
+                >
+                  {id === 'javascript' ? 'JavaScript' : 'TypeScript'}
+                </Button>
+              ))}
+            </div>
             <Button
               type="button"
               size="sm"
@@ -301,41 +318,29 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
 }
 
 export function PageView(): React.JSX.Element {
-  const { tabs, page, pagesById, spaces, spaceId } = useWorkspace()
-  const deskSpace = spaces.find((space) => space.id === spaceId) ?? spaces[0] ?? null
+  const { tabs, page, pagesById } = useWorkspace()
 
   if (tabs.length === 0) {
-    if (!deskSpace) {
-      return (
-        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          Create a space to sit down.
-        </div>
-      )
-    }
-    return <DeskBlotter space={deskSpace} />
+    return <DeskBlotter active />
   }
 
   return (
     <div className="relative h-full">
       {tabs.map((tab) => {
         const tabPage = pagesById[tab.pageId]
-        if (!tabPage) return null
+        if (!tabPage && !isDeskPageId(tab.pageId)) return null
         const active = page?.id === tab.pageId
-        const space = spaces.find((item) => item.id === tabPage.spaceId)
         return (
           <div
             key={tab.pageId}
-            className={cn(
-              'absolute inset-0 min-h-0',
-              active ? 'z-10' : 'invisible pointer-events-none z-0'
-            )}
+            className={cn('absolute inset-0 min-h-0 bg-paper', active ? 'z-10' : 'hidden')}
             aria-hidden={!active}
           >
-            {isDeskPageId(tabPage.id) && space ? (
-              <DeskBlotter space={space} />
-            ) : (
+            {isDeskPageId(tab.pageId) ? (
+              <DeskBlotter active={active} />
+            ) : tabPage ? (
               <PagePane page={tabPage} active={active} />
-            )}
+            ) : null}
           </div>
         )
       })}

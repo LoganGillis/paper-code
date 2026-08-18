@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import { z } from 'zod'
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, getPrisma } from './db'
+import { didSeedThisLaunch } from './seed'
+import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updates'
 import { executeSnippet } from './runner'
 import { isSecretEncryptionAvailable, sealSecret, unsealSecret } from './secrets'
 import {
@@ -23,6 +25,7 @@ import type {
   Space,
   SpaceTree
 } from '../shared/api'
+import { buildGuideDataPages, isGuideDataPageId, isGuidePageId } from '../shared/guide-data'
 
 const idInput = z.object({ id: z.string().min(1) })
 const pageTypes = ['markdown', 'javascript', 'typescript', 'csv'] as const
@@ -55,6 +58,7 @@ function serializePageSummary(page: {
   type: string
   folderId: string | null
   sortOrder: number
+  archived?: boolean
   icon: string
   iconColor: string
   updatedAt: Date
@@ -66,6 +70,7 @@ function serializePageSummary(page: {
     type,
     folderId: page.folderId,
     sortOrder: page.sortOrder,
+    archived: Boolean(page.archived),
     icon: normalizeIcon(page.icon, defaultIconForPage(type)),
     iconColor: normalizeColor(page.iconColor, defaultColorForPage(type)),
     updatedAt: page.updatedAt.toISOString()
@@ -127,13 +132,15 @@ async function buildTree(spaceId: string): Promise<SpaceTree> {
     where: { spaceId },
     orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }]
   })
+  const live = pages.filter((page) => !page.archived)
+  const archived = pages.filter((page) => page.archived)
 
   const folderNodes = new Map<string, FolderNode>()
   for (const folder of folders) {
     folderNodes.set(folder.id, serializeFolder(folder))
   }
 
-  for (const page of pages) {
+  for (const page of live) {
     const summary = serializePageSummary(page)
     if (page.folderId && folderNodes.has(page.folderId)) {
       folderNodes.get(page.folderId)!.pages.push(summary)
@@ -153,7 +160,8 @@ async function buildTree(spaceId: string): Promise<SpaceTree> {
   return {
     space: serializeSpace(space),
     folders: roots,
-    pages: pages.filter((page) => !page.folderId).map(serializePageSummary)
+    pages: live.filter((page) => !page.folderId).map(serializePageSummary),
+    archivedPages: archived.map(serializePageSummary)
   }
 }
 
@@ -251,8 +259,20 @@ async function loadSecretsForRun(spaceId: string): Promise<Record<string, string
 export const procedures: AppApi = {
   app: {
     getConfig: async () => ({
-      databasePath: is.dev ? 'prisma/dev.db' : getDatabasePath()
+      name: app.getName(),
+      version: app.getVersion(),
+      isDev: is.dev,
+      databasePath: is.dev ? 'prisma/dev.db' : getDatabasePath(),
+      seededThisLaunch: didSeedThisLaunch()
     }),
+    getUpdateStatus: async () => getUpdateStatus(),
+    checkForUpdates: async () => {
+      checkForUpdates()
+      return getUpdateStatus()
+    },
+    quitAndInstall: async () => {
+      quitAndInstall()
+    },
     pickCsv: async () => {
       const parent = BrowserWindow.getFocusedWindow()
       const picked = parent
@@ -409,13 +429,16 @@ export const procedures: AppApi = {
           name: z.string().trim().min(1).max(80)
         })
         .parse(input)
+      const parent = data.parentId
+        ? await getPrisma().folder.findUnique({ where: { id: data.parentId } })
+        : await getPrisma().space.findUnique({ where: { id: data.spaceId } })
       const folder = await getPrisma().folder.create({
         data: {
           name: data.name,
           spaceId: data.spaceId,
           parentId: data.parentId ?? null,
           icon: 'Folder',
-          iconColor: 'slate'
+          iconColor: normalizeColor(parent?.iconColor ?? 'slate')
         }
       })
       return serializeFolder(folder)
@@ -452,6 +475,11 @@ export const procedures: AppApi = {
   pages: {
     get: async (input) => {
       const data = idInput.parse(input)
+      if (isGuideDataPageId(data.id)) {
+        const host = (await getPrisma().space.findFirst({ orderBy: { createdAt: 'asc' } }))?.id ?? ''
+        const found = buildGuideDataPages(host).find((page) => page.id === data.id)
+        if (found) return found
+      }
       const page = await getPrisma().page.findUniqueOrThrow({ where: { id: data.id } })
       return serializePage(page)
     },
@@ -476,6 +504,9 @@ export const procedures: AppApi = {
               ? 'column,value\n,'
               : 'console.log("Hello, Paper")\n')
 
+      const parent = data.folderId
+        ? await getPrisma().folder.findUnique({ where: { id: data.folderId } })
+        : await getPrisma().space.findUnique({ where: { id: data.spaceId } })
       const page = await getPrisma().page.create({
         data: {
           title: data.title,
@@ -483,7 +514,7 @@ export const procedures: AppApi = {
           content,
           description: '',
           icon: defaultIconForPage(data.type),
-          iconColor: defaultColorForPage(data.type),
+          iconColor: normalizeColor(parent?.iconColor ?? 'slate', defaultColorForPage(data.type)),
           spaceId: data.spaceId,
           folderId: data.folderId ?? null
         }
@@ -515,6 +546,8 @@ export const procedures: AppApi = {
           title: z.string().trim().min(1).max(120).optional(),
           content: z.string().optional(),
           description: z.string().optional(),
+          type: z.enum(pageTypes).optional(),
+          archived: z.boolean().optional(),
           icon: iconName.optional(),
           iconColor: iconColor.optional()
         })
@@ -525,6 +558,8 @@ export const procedures: AppApi = {
           ...(data.title !== undefined ? { title: data.title } : {}),
           ...(data.content !== undefined ? { content: data.content } : {}),
           ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.type !== undefined ? { type: data.type } : {}),
+          ...(data.archived !== undefined ? { archived: data.archived } : {}),
           ...(data.icon !== undefined ? { icon: data.icon } : {}),
           ...(data.iconColor !== undefined ? { iconColor: data.iconColor } : {})
         }
@@ -546,28 +581,36 @@ export const procedures: AppApi = {
           pageId: z.string().min(1)
         })
         .parse(input)
-      const pages = await getPrisma().page.findMany({ where: { spaceId: data.spaceId } })
-      const page = pages.find((item) => item.id === data.pageId)
-      const serialized = pages.map(serializePage)
+      const [spacePages, allPages, spaces] = await Promise.all([
+        getPrisma().page.findMany({ where: { spaceId: data.spaceId, archived: false } }),
+        getPrisma().page.findMany({ where: { archived: false } }),
+        getPrisma().space.findMany()
+      ])
+      const page = spacePages.find((item) => item.id === data.pageId)
+      const serialized = allPages.map(serializePage)
+      const guideData = buildGuideDataPages(data.spaceId)
+      const pagesForRun = isGuidePageId(data.pageId) ? [...guideData, ...serialized] : serialized
       const current = page
         ? serializePage(page)
         : {
             id: data.pageId,
             spaceId: data.spaceId,
             folderId: null,
-            title: 'Guide',
+            title: isGuidePageId(data.pageId) ? 'Guide' : 'Untitled',
             type: data.language,
             content: data.source,
             description: '',
             icon: 'BookOpen' as const,
             iconColor: 'slate' as const,
             sortOrder: 0,
+            archived: false,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }
       return executeSnippet(data.language, data.source, {
         page: current,
-        pages: serialized,
+        pages: pagesForRun,
+        spaces: spaces.map((space) => ({ id: space.id, name: space.name })),
         secrets: await loadSecretsForRun(data.spaceId)
       })
     }

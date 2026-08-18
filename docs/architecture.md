@@ -28,7 +28,7 @@ When adding a method: type, procedure, and `api` object must all exist. Then res
 
 ## Data
 
-Prisma 7 + SQLite (`better-sqlite3`). Client generated to `src/generated/prisma` (gitignored).
+Prisma 7 + SQLite (`better-sqlite3`). Client generated to `src/generated/prisma` (gitignored). The packaged app must pass `nativeBinding` to the unpacked `better_sqlite3.node` — electron-builder leaves a 0-byte stub inside the asar.
 
 | Model | Role |
 | --- | --- |
@@ -41,7 +41,7 @@ Dev DB: `prisma/dev.db`. App config path from `app.getConfig()`.
 
 `PageSummary` includes `updatedAt` so the desk can sort recent pages. Serializers live in `procedures.ts`.
 
-Seed: `seedIfEmpty` + `ensureHelperDemos` on every startup (so demo CSVs appear without a manual reset).
+First launch: `seedIfEmpty` (`src/main/seed.ts`). Reset the dev database with `pnpm seed`. Do not leave a trailing expression in example scripts.
 
 ## Workspace (renderer)
 
@@ -57,9 +57,9 @@ Persistence (`localStorage`):
 - `paper.csvView.${pageId}`
 - `paper.chart.${pageId}`
 
-Bootstrap loads those **once** (`booted` ref). Empty tabs stay empty (desk). It must not call `selectPage(firstPage)` or a later `selectPage` identity change will reopen Notes after you close the last tab.
+Bootstrap loads those **once** (`booted` ref) and always `pinDesk` so `paper:desk` is first. Closing real tabs never removes it.
 
-`selectPage` / `openGuide` / `openDesk` / `openDaily` / `closeTab` are the only ways tabs should change.
+`selectPage` / `openGuide` / `openDesk` / `closeTab` are the only ways tabs should change. `closeTab` no-ops on the desk.
 
 Keep-alive: `PageView` renders a pane per tab (`invisible` when inactive) so CodeMirror/TipTap do not remount.
 
@@ -83,7 +83,7 @@ Do not let CM’s default search panel show; use `FindBar`.
 2. `vm.runInNewContext` with `console` → log buffer, timers, `require` that resolves sibling pages.
 3. Timeout 8s, including thenables.
 
-`run.execute` loads all pages in the space. If `pageId` is missing (Guide), it synthesizes a stand-in page so `$csv` / import still resolve against the host space.
+`run.execute` loads pages across spaces. `import` / `$csv` resolve **same-space** titles unless the spec is `SpaceName/Page title`. Guide runs also inject hidden sample CSVs (`paper:guide:orders`, `paper:guide:products`). If `pageId` is the Guide, it synthesizes a stand-in page.
 
 Secrets bag: current space always; other spaces only if `secretsExposed`. Current space wins key collisions. Installed via `installSecretHelpers` — `$secrets` inspect/toJSON shows names only.
 

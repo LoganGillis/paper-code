@@ -34,8 +34,10 @@ Chain (copy, never mutate):
 A CSV page loads as a `$Table` of objects (numbers and booleans coerced).
 
 ```js
-import orders from 'orders'
-const also = $csv('orders')   // quotes autocomplete CSV titles
+import orders from 'orders'                 // same space only
+import sales from 'Workshop/orders'         // [space]/[page]
+const also = $csv('orders')
+const other = $csv('Workshop/orders')
 ```
 
 `$csv(name)` prefers a file in the same folder.

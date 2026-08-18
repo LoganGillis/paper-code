@@ -57,11 +57,13 @@ function selectionText(rows: string[][], box: Sel): string {
 export function CsvEditor({
   content,
   onChange,
-  active = true
+  active = true,
+  readOnly = false
 }: {
   content: string
   onChange: (value: string) => void
   active?: boolean
+  readOnly?: boolean
 }): React.JSX.Element {
   const [rows, setRows] = useState<string[][]>(() => {
     const parsed = parseCsv(content)
@@ -71,14 +73,47 @@ export function CsvEditor({
   const [editing, setEditing] = useState<{ r: number; c: number; value: string } | null>(null)
   const [fill, setFill] = useState<{ toR: number; toC: number } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<Sel | null>(null)
+  const history = useRef<{ past: string[][][]; future: string[][][] }>({ past: [], future: [] })
+  const lastSent = useRef(content)
 
-  const commit = useCallback(
-    (next: string[][]) => {
+  useEffect(() => {
+    if (content === lastSent.current) return
+    lastSent.current = content
+    const parsed = parseCsv(content)
+    setRows(parsed.length > 0 ? parsed : [['', '']])
+  }, [content])
+
+  const applyGrid = useCallback(
+    (next: string[][], record: boolean) => {
+      if (record) {
+        history.current.past.push(cloneGrid(rows))
+        if (history.current.past.length > 80) history.current.past.shift()
+        history.current.future = []
+      }
       setRows(next)
-      onChange(serializeCsv(next))
+      const serialized = serializeCsv(next)
+      lastSent.current = serialized
+      onChange(serialized)
     },
-    [onChange]
+    [onChange, rows]
   )
+
+  const commit = useCallback((next: string[][], record = true) => applyGrid(next, record), [applyGrid])
+
+  const undo = useCallback(() => {
+    const prev = history.current.past.pop()
+    if (!prev) return
+    history.current.future.push(cloneGrid(rows))
+    applyGrid(prev, false)
+  }, [applyGrid, rows])
+
+  const redo = useCallback(() => {
+    const next = history.current.future.pop()
+    if (!next) return
+    history.current.past.push(cloneGrid(rows))
+    applyGrid(next, false)
+  }, [applyGrid, rows])
 
   const bounds = normalize(sel)
 
@@ -206,7 +241,13 @@ export function CsvEditor({
     if (!active) return
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement
-      if (target.closest('input, textarea, [contenteditable="true"]') && !editing) return
+      if (
+        target.closest('input, textarea, [contenteditable="true"]') &&
+        !editing &&
+        !rootRef.current?.contains(target)
+      ) {
+        return
+      }
       const key = event.key
       if (editing) {
         if (key === 'Enter') {
@@ -231,6 +272,7 @@ export function CsvEditor({
         copySelection()
         return
       }
+      if (readOnly) return
       if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 'v') {
         event.preventDefault()
         void pasteAtSelection()
@@ -239,6 +281,18 @@ export function CsvEditor({
       if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 'a') {
         event.preventDefault()
         selectAll()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 'z') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.shiftKey) redo()
+        else undo()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 'y') {
+        event.preventDefault()
+        redo()
         return
       }
 
@@ -288,16 +342,46 @@ export function CsvEditor({
     copySelection,
     editing,
     pasteAtSelection,
+    readOnly,
+    redo,
     rows,
     sel,
-    selectAll
+    selectAll,
+    undo
   ])
 
   const rangeClass = useMemo(() => normalize(sel), [sel])
   const shortcut = isMac() ? (key: string) => `⌘${key}` : (key: string) => `${modSymbol()}+${key}`
 
+  useEffect(() => {
+    const onUp = (): void => {
+      dragRef.current = null
+    }
+    window.addEventListener('mouseup', onUp)
+    return () => window.removeEventListener('mouseup', onUp)
+  }, [])
+
+  useEffect(() => {
+    if (active) rootRef.current?.focus()
+  }, [active])
+
+  const selectRow = (r: number, extend: boolean): void => {
+    const lastC = (rows[0]?.length ?? 1) - 1
+    setSel(extend ? { ...sel, r1: r, c0: 0, c1: lastC } : { r0: r, c0: 0, r1: r, c1: lastC })
+  }
+
+  const selectColumn = (c: number, extend: boolean): void => {
+    const lastR = rows.length - 1
+    setSel(extend ? { ...sel, c1: c, r0: 0, r1: lastR } : { r0: 0, c0: c, r1: lastR, c1: c })
+  }
+
   return (
-    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col" tabIndex={0}>
+    <div
+      ref={rootRef}
+      className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+      tabIndex={0}
+    >
+      {readOnly ? null : (
       <div className="flex flex-wrap gap-1 border-b border-border/60 px-3 py-1.5">
         <Button type="button" variant="ghost" size="sm" onClick={() => insertRow(bounds.r0)}>
           Insert row
@@ -312,17 +396,37 @@ export function CsvEditor({
           Delete column
         </Button>
       </div>
+      )}
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-max min-w-full border-collapse text-[13px]">
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto select-none">
+            <table className="w-max min-w-full border-collapse text-[13px] select-none">
               <thead className="csv-head sticky top-0 z-10">
                 <tr>
-                  <th className="w-10 border-b border-r border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground" />
+                  <th
+                    className="w-10 cursor-pointer border-b border-r border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground"
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      selectAll()
+                      rootRef.current?.focus()
+                    }}
+                  />
                   {rows[0]?.map((_, c) => (
                     <th
                       key={c}
-                      className="min-w-28 border-b border-r border-border/50 px-2 py-1 text-left text-[11px] font-medium text-muted-foreground"
+                      className={cn(
+                        'min-w-28 cursor-pointer border-b border-r border-border/50 px-2 py-1 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent/60',
+                        rangeClass.c0 === c &&
+                          rangeClass.c1 === c &&
+                          rangeClass.r0 === 0 &&
+                          rangeClass.r1 === rows.length - 1 &&
+                          'bg-accent/70'
+                      )}
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        selectColumn(c, event.shiftKey)
+                        rootRef.current?.focus()
+                      }}
                     >
                       {columnLabel(c)}
                     </th>
@@ -332,7 +436,14 @@ export function CsvEditor({
               <tbody>
                 {rows.map((row, r) => (
                   <tr key={r}>
-                    <th className="csv-gutter border-b border-r border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                    <th
+                      className="csv-gutter cursor-pointer border-b border-r border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent/60"
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        selectRow(r, event.shiftKey)
+                        rootRef.current?.focus()
+                      }}
+                    >
                       {r + 1}
                     </th>
                     {row.map((cell, c) => {
@@ -353,20 +464,37 @@ export function CsvEditor({
                           )}
                           onMouseDown={(event) => {
                             if ((event.target as HTMLElement).dataset.handle) return
-                            setSel(
-                              event.shiftKey
-                                ? { ...sel, r1: r, c1: c }
-                                : { r0: r, c0: c, r1: r, c1: c }
-                            )
+                            if (event.button !== 0) return
+                            event.preventDefault()
+                            rootRef.current?.focus()
+                            const next = event.shiftKey
+                              ? { ...sel, r1: r, c1: c }
+                              : { r0: r, c0: c, r1: r, c1: c }
+                            setSel(next)
+                            dragRef.current = next
                             setEditing(null)
                           }}
-                          onDoubleClick={() => setEditing({ r, c, value: cell })}
+                          onMouseEnter={() => {
+                            if (!dragRef.current) return
+                            setSel({ ...dragRef.current, r1: r, c1: c })
+                          }}
+                          onDoubleClick={() => {
+                            if (!readOnly) setEditing({ r, c, value: cell })
+                          }}
                         >
+                          <span
+                            className={cn(
+                              'block min-h-5 whitespace-nowrap',
+                              isEdit && 'invisible'
+                            )}
+                          >
+                            {cell}
+                          </span>
                           {isEdit ? (
                             <input
                               autoFocus
                               value={editing.value}
-                              className="w-full bg-transparent outline-none"
+                              className="absolute inset-0 min-w-0 bg-transparent px-2 py-1 outline-none select-text"
                               onChange={(event) => setEditing({ r, c, value: event.target.value })}
                               onBlur={() => {
                                 const next = cloneGrid(rows)
@@ -375,9 +503,7 @@ export function CsvEditor({
                                 setEditing(null)
                               }}
                             />
-                          ) : (
-                            <span className="block min-h-5 whitespace-nowrap">{cell}</span>
-                          )}
+                          ) : null}
                           {isAnchor ? (
                             <span
                               data-handle="fill"

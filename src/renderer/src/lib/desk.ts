@@ -1,6 +1,6 @@
-import type { Page, Space } from '@shared/api'
+import type { Page } from '@shared/api'
 
-export const DESK_PREFIX = 'paper:desk:'
+export const DESK_PAGE_ID = 'paper:desk'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -30,15 +30,7 @@ const EPIGRAPHS = [
 ]
 
 export function isDeskPageId(id: string): boolean {
-  return id.startsWith(DESK_PREFIX)
-}
-
-export function deskPageId(spaceId: string): string {
-  return `${DESK_PREFIX}${spaceId}`
-}
-
-export function spaceIdFromDesk(id: string): string | null {
-  return isDeskPageId(id) ? id.slice(DESK_PREFIX.length) : null
+  return id === DESK_PAGE_ID || id.startsWith('paper:desk:')
 }
 
 export function startOfWeek(date: Date): Date {
@@ -89,37 +81,20 @@ export function weekDays(from = new Date()): Date[] {
   return Array.from({ length: 7 }, (_, index) => addDays(monday, index))
 }
 
-export function dailyDoc(date: Date): object {
-  return {
-    type: 'doc',
-    content: [
-      {
-        type: 'heading',
-        attrs: { level: 1 },
-        content: [{ type: 'text', text: dailyTitle(date) }]
-      },
-      {
-        type: 'paragraph',
-        content: [{ type: 'text', text: weekdayName(date) }]
-      },
-      { type: 'paragraph' }
-    ]
-  }
-}
-
-export function buildDeskPage(space: Space): Page {
+export function buildDeskPage(spaceId: string): Page {
   const now = new Date().toISOString()
   return {
-    id: deskPageId(space.id),
-    spaceId: space.id,
+    id: DESK_PAGE_ID,
+    spaceId,
     folderId: null,
     title: 'Desk',
     type: 'markdown',
     content: '',
     description: '',
     icon: 'House',
-    iconColor: space.iconColor,
+    iconColor: 'slate',
     sortOrder: 0,
+    archived: false,
     createdAt: now,
     updatedAt: now
   }

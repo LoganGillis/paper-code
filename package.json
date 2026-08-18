@@ -1,10 +1,11 @@
 {
-  "name": "desktop-app",
-  "version": "1.0.0",
-  "description": "Paper — a Notion-like desktop notebook and JS/TS runner",
+  "name": "paper",
+  "productName": "Paper",
+  "version": "0.1.1",
+  "description": "A notebook for notes, tables, and scripts.",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "Logan Gillis",
+  "homepage": "https://github.com/LoganGillis/paper-code",
   "type": "module",
   "scripts": {
     "format": "prettier --write .",
@@ -20,10 +21,13 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "seed": "tsx scripts/seed-examples.ts",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux",
+    "dist": "npm run build && electron-builder --mac --win --publish never",
+    "release": "npm run build && electron-builder --mac --win --publish always"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -60,6 +64,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dotenv": "^17.2.1",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.542.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
@@ -90,6 +95,7 @@
     "prettier": "^3.7.4",
     "prisma": "^7.0.0",
     "tailwindcss": "^4.1.12",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
     "vite": "^7.2.6"
   }

@@ -23,6 +23,7 @@ export type PageSummary = Appearance & {
   type: PageType
   folderId: string | null
   sortOrder: number
+  archived: boolean
   updatedAt: string
 }
 
@@ -47,10 +48,23 @@ export type SpaceTree = {
   space: Space
   folders: FolderNode[]
   pages: PageSummary[]
+  archivedPages: PageSummary[]
 }
 
 export type AppConfig = {
+  name: string
+  version: string
+  isDev: boolean
   databasePath: string
+  seededThisLaunch: boolean
+}
+
+export type UpdateStatus = {
+  state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
+  currentVersion: string
+  availableVersion?: string
+  percent?: number
+  error?: string
 }
 
 export type RunResult = {
@@ -75,6 +89,9 @@ export type AppApi = {
   app: {
     getConfig: () => Promise<AppConfig>
     pickCsv: () => Promise<{ name: string; content: string } | null>
+    getUpdateStatus: () => Promise<UpdateStatus>
+    checkForUpdates: () => Promise<UpdateStatus>
+    quitAndInstall: () => Promise<void>
   }
   spaces: {
     list: () => Promise<Space[]>
@@ -120,6 +137,8 @@ export type AppApi = {
       title?: string
       content?: string
       description?: string
+      type?: PageType
+      archived?: boolean
       icon?: IconName
       iconColor?: IconColorId
     }) => Promise<Page>

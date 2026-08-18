@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
+import type { UpdateStatus } from '@shared/api'
 import { useTheme, type ThemePreference } from '@/components/theme-provider'
 import { Button } from '@/components/ui/button'
 import {
@@ -8,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { api } from '@/lib/rpc'
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string; hint: string }> = [
   { id: 'system', label: 'System', hint: 'Follow the computer' },
@@ -23,13 +26,34 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void
 }): React.JSX.Element {
   const { preference, setPreference } = useTheme()
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    void api.app.getUpdateStatus().then(setUpdate)
+    const off = window.api?.onUpdateStatus?.((status) => setUpdate(status))
+    return () => off?.()
+  }, [open])
+
+  const updateHint = ((): string => {
+    if (!update) return 'Checking…'
+    if (update.state === 'checking') return 'Checking for updates…'
+    if (update.state === 'downloading') {
+      return `Downloading ${update.availableVersion ?? ''} (${Math.round(update.percent ?? 0)}%)`
+    }
+    if (update.state === 'available') return `Version ${update.availableVersion} is available.`
+    if (update.state === 'ready') return `Version ${update.availableVersion} is ready to install.`
+    if (update.state === 'error') return update.error ?? 'Could not check for updates.'
+    if (update.state === 'not-available') return 'You’re on the latest version.'
+    return `Version ${update.currentVersion}`
+  })()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(28rem,calc(100vw-2rem))]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>How Paper looks on this computer.</DialogDescription>
+          <DialogDescription>Paper {update?.currentVersion ?? ''}</DialogDescription>
         </DialogHeader>
 
         <section className="mt-5">
@@ -55,6 +79,27 @@ export function SettingsDialog({
               </Button>
             ))}
           </div>
+        </section>
+
+        <section className="mt-6">
+          <h3 className="mb-2 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            Updates
+          </h3>
+          <p className="mb-3 text-sm text-muted-foreground">{updateHint}</p>
+          {update?.state === 'ready' ? (
+            <Button type="button" onClick={() => void api.app.quitAndInstall()}>
+              Restart to update
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={update?.state === 'checking' || update?.state === 'downloading'}
+              onClick={() => void api.app.checkForUpdates().then(setUpdate)}
+            >
+              Check for updates
+            </Button>
+          )}
         </section>
       </DialogContent>
     </Dialog>

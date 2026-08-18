@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { IconColorId, IconName } from '@shared/icons'
-import { ICON_COLOR_IDS, ICON_NAMES } from '@shared/icons'
+import { ICON_ACCENT, ICON_COLOR_IDS, ICON_NAMES } from '@shared/icons'
 import { NamedIcon } from '@/lib/lucide-icons'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -23,21 +23,25 @@ const COLOR_LABELS: Record<IconColorId, string> = {
 export function IconBadge({
   icon,
   color,
-  className
+  className,
+  variant = 'chip'
 }: {
   icon: IconName
   color: IconColorId
   className?: string
+  variant?: 'chip' | 'plain'
 }): React.JSX.Element {
   return (
     <span
       className={cn(
-        'inline-flex size-6 shrink-0 items-center justify-center rounded-md',
-        `icon-chip icon-chip-${color}`,
+        'inline-flex size-6 shrink-0 items-center justify-center',
+        variant === 'chip' && `rounded-md icon-chip icon-chip-${color}`,
+        variant === 'plain' && 'bg-transparent',
         className
       )}
+      style={variant === 'plain' ? { color: ICON_ACCENT[color] } : undefined}
     >
-      <NamedIcon name={icon} className="size-3.5" />
+      <NamedIcon name={icon} className={variant === 'plain' ? 'size-4' : 'size-3.5'} />
     </span>
   )
 }
@@ -46,12 +50,14 @@ export function IconPicker({
   icon,
   color,
   onChange,
-  size = 'sm'
+  size = 'sm',
+  variant = 'chip'
 }: {
   icon: IconName
   color: IconColorId
   onChange: (next: { icon: IconName; iconColor: IconColorId }) => void
   size?: 'sm' | 'lg'
+  variant?: 'chip' | 'plain'
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -77,7 +83,12 @@ export function IconPicker({
           aria-label="Change icon"
           onClick={(event) => event.stopPropagation()}
         >
-          <IconBadge icon={icon} color={color} className={size === 'lg' ? 'size-9' : 'size-6'} />
+          <IconBadge
+            icon={icon}
+            color={color}
+            variant={variant}
+            className={size === 'lg' ? 'size-9' : 'size-6'}
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent

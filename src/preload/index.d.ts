@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { RpcResult } from '../shared/api'
+import type { RpcResult, UpdateStatus } from '../shared/api'
 
 declare global {
   interface Window {
@@ -7,6 +7,7 @@ declare global {
     api: {
       invoke: (path: string, input?: unknown) => Promise<RpcResult>
       onCloseTab: (callback: () => void) => () => void
+      onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void
     }
   }
 }

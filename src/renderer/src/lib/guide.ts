@@ -1,11 +1,7 @@
 import type { Page, SpaceTree } from '@shared/api'
-import { collectPages } from '@/lib/pages'
+import { GUIDE_ORDERS_ID, GUIDE_PAGE_ID, GUIDE_PRODUCTS_ID } from '@shared/guide-data'
 
-export const GUIDE_PAGE_ID = 'paper:guide'
-
-export function isGuidePageId(id: string): boolean {
-  return id === GUIDE_PAGE_ID
-}
+export { GUIDE_PAGE_ID, isGuidePageId } from '@shared/guide-data'
 
 type DocNode = Record<string, unknown>
 
@@ -46,23 +42,11 @@ function csvEmbed(pageId: string): DocNode {
   return { type: 'csvEmbed', attrs: { pageId } }
 }
 
-function pageLink(pageId: string): DocNode {
-  return { type: 'pageLink', attrs: { pageId } }
-}
-
 function codeMark(value: string): DocNode {
   return text(value, [{ type: 'code' }])
 }
 
-function findId(trees: Record<string, SpaceTree>, title: string): string | null {
-  return collectPages(trees).find((item) => item.page.title === title)?.page.id ?? null
-}
-
-export function buildGuideDoc(trees: Record<string, SpaceTree>): DocNode {
-  const ordersId = findId(trees, 'orders')
-  const datesId = findId(trees, 'dates')
-  const csvId = findId(trees, 'csv')
-
+export function buildGuideDoc(_trees: Record<string, SpaceTree>): DocNode {
   const content: DocNode[] = [
     paragraph(
       'Paper is a notebook for notes, tables, and scripts. This page is the built-in guide — you can run the examples, but you cannot edit the text.'
@@ -150,9 +134,7 @@ $yesterday < $today`
     )
   ]
 
-  if (ordersId) {
-    content.push(paragraph('The sample orders table:'), csvEmbed(ordersId))
-  }
+  content.push(paragraph('A sample orders table that lives with the Guide:'), csvEmbed(GUIDE_ORDERS_ID))
 
   content.push(
     code(
@@ -228,14 +210,7 @@ priced.groupBy('region').agg({ revenue: 'sum', qty: 'sum' })`
     )
   )
 
-  if (datesId || csvId) {
-    content.push(heading(3, 'Try the test scripts'))
-    const bits: DocNode[] = [text('The workspace includes checked examples: ')]
-    if (datesId) bits.push(pageLink(datesId), text('  '))
-    if (csvId) bits.push(pageLink(csvId))
-    bits.push(text('.'))
-    content.push({ type: 'paragraph', content: bits })
-  }
+  content.push(paragraph('The matching products table:'), csvEmbed(GUIDE_PRODUCTS_ID))
 
   content.push(
     paragraph(
@@ -259,6 +234,7 @@ export function buildGuidePage(spaceId: string, trees: Record<string, SpaceTree>
     icon: 'BookOpen',
     iconColor: 'slate',
     sortOrder: 0,
+    archived: false,
     createdAt: now,
     updatedAt: now
   }

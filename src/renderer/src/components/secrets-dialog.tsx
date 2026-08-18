@@ -179,7 +179,7 @@ export function SecretsDialog({
       >
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <IconBadge icon={space.icon} color={space.iconColor} className="size-10" />
+            <IconBadge icon={space.icon} color={space.iconColor} variant="plain" className="size-10" />
             <div className="min-w-0">
               <DialogTitle>Secrets</DialogTitle>
               <DialogDescription className="truncate">{space.name}</DialogDescription>

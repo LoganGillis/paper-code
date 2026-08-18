@@ -9,6 +9,7 @@ import { filterPageHits } from '@/lib/pages'
 import { TypeBadge } from '@/components/type-badge'
 import { Input } from '@/components/ui/input'
 import { findPageHit } from '@/lib/pages'
+import { wantsNewTab } from '@/lib/platform'
 import { useWorkspace } from '@/lib/workspace'
 
 export const PageLink = Node.create({
@@ -93,7 +94,9 @@ function PageLinkView({ node, updateAttributes, editor }: ReactNodeViewProps): R
         type="button"
         contentEditable={false}
         className="paper-page-link inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] align-middle"
-        onClick={() => void selectPage(hit.page.id, hit.spaceId)}
+        onClick={(event) =>
+          void selectPage(hit.page.id, hit.spaceId, { newTab: wantsNewTab(event) })
+        }
       >
         <IconBadge icon={hit.page.icon} color={hit.page.iconColor} className="size-4" />
         <span className="max-w-[12rem] truncate">{displayTitle(hit.page.title)}</span>

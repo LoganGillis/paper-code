@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Plus, Search, Settings } from 'lucide-react'
+import { Archive, BookOpen, Plus, Search, Settings } from 'lucide-react'
 import { SpaceSection } from '@/components/file-tree'
 import { SearchDialog } from '@/components/search-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 
 export function Sidebar(): React.JSX.Element {
-  const { spaces, trees, createSpace, openGuide } = useWorkspace()
+  const { spaces, trees, createSpace, openGuide, showArchived, setShowArchived } = useWorkspace()
   const [newSpaceName, setNewSpaceName] = useState('')
   const [spaceOpen, setSpaceOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -83,16 +83,29 @@ export function Sidebar(): React.JSX.Element {
       </ScrollArea>
 
       <div className="flex items-center justify-between px-2 py-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          aria-label="Guide"
-          onClick={() => openGuide()}
-        >
-          <BookOpen />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Guide"
+            onClick={() => openGuide()}
+          >
+            <BookOpen />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn('size-8', showArchived && 'bg-accent text-accent-foreground')}
+            aria-label={showArchived ? 'Hide archive' : 'Show archive'}
+            aria-pressed={showArchived}
+            onClick={() => setShowArchived(!showArchived)}
+          >
+            <Archive />
+          </Button>
+        </div>
         <Button
           type="button"
           variant="ghost"

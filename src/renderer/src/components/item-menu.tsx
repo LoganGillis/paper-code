@@ -1,4 +1,4 @@
-import { Copy, CopyPlus, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Copy, CopyPlus, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -13,12 +13,16 @@ export function ItemMenu({
   onDuplicate,
   onCopy,
   onDelete,
+  onArchive,
+  onUnarchive,
   onSecrets,
   className
 }: {
   onDuplicate: () => void
   onCopy: () => void
   onDelete: () => void
+  onArchive?: () => void
+  onUnarchive?: () => void
   onSecrets?: () => void
   className?: string
 }): React.JSX.Element {
@@ -57,6 +61,18 @@ export function ItemMenu({
           <Copy className="size-3.5" />
           Copy
         </DropdownMenuItem>
+        {onArchive ? (
+          <DropdownMenuItem onSelect={onArchive}>
+            <Archive className="size-3.5" />
+            Archive
+          </DropdownMenuItem>
+        ) : null}
+        {onUnarchive ? (
+          <DropdownMenuItem onSelect={onUnarchive}>
+            <ArchiveRestore className="size-3.5" />
+            Unarchive
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
           <Trash2 className="size-3.5" />

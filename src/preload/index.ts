@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { RPC_CHANNEL, type RpcRequest, type RpcResult } from '../shared/api'
+import { RPC_CHANNEL, type RpcRequest, type RpcResult, type UpdateStatus } from '../shared/api'
 
 const api = {
   invoke: (path: string, input?: unknown): Promise<RpcResult> => {
@@ -12,6 +12,13 @@ const api = {
     ipcRenderer.on('paper:close-tab', listener)
     return () => {
       ipcRenderer.removeListener('paper:close-tab', listener)
+    }
+  },
+  onUpdateStatus: (callback: (status: UpdateStatus) => void): (() => void) => {
+    const listener = (_event: unknown, status: UpdateStatus): void => callback(status)
+    ipcRenderer.on('paper:update-status', listener)
+    return () => {
+      ipcRenderer.removeListener('paper:update-status', listener)
     }
   }
 }

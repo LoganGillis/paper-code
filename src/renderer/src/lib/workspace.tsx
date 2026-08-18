@@ -2,14 +2,22 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { IconColorId, IconName } from '@shared/icons'
 import type { Page, PageType, Space, SpaceTree, TabRef } from '@shared/api'
 import { api } from '@/lib/rpc'
-import { buildDeskPage, dailyDoc, dailyTitle, isDeskPageId, spaceIdFromDesk } from '@/lib/desk'
+import { DESK_PAGE_ID, buildDeskPage, isDeskPageId } from '@/lib/desk'
 import { GUIDE_PAGE_ID, buildGuidePage, isGuidePageId } from '@/lib/guide'
+import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
 import { collectPages } from '@/lib/pages'
+
+export type SelectPageOptions = { newTab?: boolean }
 
 const SPACE_KEY = 'paper.spaceId'
 const PAGE_KEY = 'paper.activePageId'
 const TABS_KEY = 'paper.tabs'
 const OPEN_SPACES_KEY = 'paper.openSpaces'
+
+function pinDesk(tabs: TabRef[], hostSpace: string): TabRef[] {
+  const rest = tabs.filter((tab) => !isDeskPageId(tab.pageId))
+  return [{ pageId: DESK_PAGE_ID, spaceId: hostSpace }, ...rest]
+}
 
 type WorkspaceContextValue = {
   ready: boolean
@@ -24,12 +32,16 @@ type WorkspaceContextValue = {
   activeFolderId: string | null
   selectSpace: (id: string) => void
   toggleSpace: (id: string) => void
-  selectPage: (id: string, spaceId: string) => Promise<void>
+  selectPage: (id: string, spaceId: string, options?: SelectPageOptions) => Promise<void>
   openGuide: () => void
-  openDesk: (spaceId: string) => void
-  openDaily: (spaceId: string, date?: Date) => Promise<void>
+  openDesk: () => void
   preserveEditorFocus: boolean
   closeTab: (pageId: string) => void
+  showArchived: boolean
+  setShowArchived: (value: boolean) => void
+  archivePage: (id: string) => Promise<void>
+  unarchivePage: (id: string) => Promise<void>
+  changePageType: (id: string, type: PageType) => Promise<void>
   selectFolder: (spaceId: string, folderId: string | null) => void
   createSpace: (name: string) => Promise<void>
   createFolder: (spaceId: string, name: string) => Promise<void>
@@ -79,10 +91,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [runningPageIds, setRunningPageIds] = useState<string[]>([])
   const [preserveEditorFocus, setPreserveEditorFocus] = useState(false)
-  const selectPageRef = useRef<(id: string, spaceId: string) => Promise<void>>(
-    async () => undefined
-  )
+  const [showArchived, setShowArchived] = useState(false)
+  const selectPageRef = useRef<
+    (id: string, spaceId: string, options?: SelectPageOptions) => Promise<void>
+  >(async () => undefined)
+  const pageRef = useRef<Page | null>(null)
   const booted = useRef(false)
+
+  useEffect(() => {
+    pageRef.current = page
+  }, [page])
 
   const setPageRunning = useCallback((id: string, running: boolean) => {
     setRunningPageIds((current) => {
@@ -135,53 +153,61 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     return { list, trees: nextTrees }
   }, [])
 
-  const isLockedPageId = (id: string): boolean => isGuidePageId(id) || isDeskPageId(id)
+  const isLockedPageId = (id: string): boolean =>
+    isGuidePageId(id) || isDeskPageId(id) || isGuideDataPageId(id)
 
-  const openDesk = useCallback(
+  const openDesk = useCallback(() => {
+    const host = spaceId ?? spaces[0]?.id ?? ''
+    const desk = buildDeskPage(host)
+    storePage(desk)
+    setPage(desk)
+    setActiveFolderId(null)
+    window.localStorage.setItem(PAGE_KEY, DESK_PAGE_ID)
+    setTabs((current) => {
+      const nextTabs = pinDesk(current, host)
+      window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
+      return nextTabs
+    })
+  }, [spaceId, spaces, storePage])
+
+  const rememberGuideData = useCallback(
     (hostSpace: string) => {
-      const space = spaces.find((item) => item.id === hostSpace)
-      if (!space) return
-      const desk = buildDeskPage(space)
-      storePage(desk)
-      setPage(desk)
-      setSpaceId(space.id)
-      setActiveFolderId(null)
-      window.localStorage.setItem(PAGE_KEY, desk.id)
-      window.localStorage.setItem(SPACE_KEY, space.id)
-      setTabs((current) => {
-        const exists = current.some((tab) => tab.pageId === desk.id)
-        const nextTabs = exists ? current : [...current, { pageId: desk.id, spaceId: space.id }]
-        window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
-        return nextTabs
-      })
-      setOpenSpaceIds((current) => {
-        const nextOpen = current.includes(space.id) ? current : [...current, space.id]
-        window.localStorage.setItem(OPEN_SPACES_KEY, JSON.stringify(nextOpen))
-        return nextOpen
-      })
+      for (const extra of buildGuideDataPages(hostSpace)) storePage(extra)
     },
-    [spaces, storePage]
+    [storePage]
   )
 
   const openGuide = useCallback(() => {
     const hostSpace = spaceId ?? spaces[0]?.id
     if (!hostSpace) return
-    const guide = buildGuidePage(hostSpace, trees)
-    storePage(guide)
-    setPage(guide)
-    window.localStorage.setItem(PAGE_KEY, GUIDE_PAGE_ID)
-    setTabs((current) => {
-      const exists = current.some((tab) => tab.pageId === GUIDE_PAGE_ID)
-      const nextTabs = exists
-        ? current
-        : [...current, { pageId: GUIDE_PAGE_ID, spaceId: hostSpace }]
-      window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
-      return nextTabs
-    })
-  }, [spaceId, spaces, storePage, trees])
+    void selectPageRef.current(GUIDE_PAGE_ID, hostSpace)
+  }, [spaceId, spaces])
+
+  const placeTab = useCallback(
+    (current: TabRef[], id: string, nextSpaceId: string, newTab: boolean): TabRef[] => {
+      if (isDeskPageId(id)) return pinDesk(current, nextSpaceId)
+      if (current.some((tab) => tab.pageId === id)) return pinDesk(current, nextSpaceId)
+      const activeId = pageRef.current?.id
+      const canReplace = Boolean(activeId && !isDeskPageId(activeId) && !newTab)
+      let next: TabRef[]
+      if (canReplace && activeId) {
+        next = current.map((tab) =>
+          tab.pageId === activeId ? { pageId: id, spaceId: nextSpaceId } : tab
+        )
+        if (!next.some((tab) => tab.pageId === id)) {
+          next = [...next, { pageId: id, spaceId: nextSpaceId }]
+        }
+        if (activeId !== id) dropPages([activeId])
+      } else {
+        next = [...current, { pageId: id, spaceId: nextSpaceId }]
+      }
+      return pinDesk(next, nextSpaceId)
+    },
+    [dropPages]
+  )
 
   const selectPage = useCallback(
-    async (id: string, nextSpaceId: string) => {
+    async (id: string, nextSpaceId: string, options?: SelectPageOptions) => {
       const active = document.activeElement
       setPreserveEditorFocus(
         Boolean(
@@ -198,13 +224,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         if (hostSpace) {
           const guide = buildGuidePage(hostSpace, trees)
           storePage(guide)
+          rememberGuideData(hostSpace)
           setPage(guide)
           window.localStorage.setItem(PAGE_KEY, GUIDE_PAGE_ID)
           setTabs((current) => {
-            const exists = current.some((tab) => tab.pageId === GUIDE_PAGE_ID)
-            const nextTabs = exists
-              ? current
-              : [...current, { pageId: GUIDE_PAGE_ID, spaceId: hostSpace }]
+            const nextTabs = placeTab(current, GUIDE_PAGE_ID, hostSpace, Boolean(options?.newTab))
             window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
             return nextTabs
           })
@@ -212,7 +236,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         return
       }
       if (isDeskPageId(id)) {
-        openDesk(spaceIdFromDesk(id) ?? nextSpaceId)
+        openDesk()
         return
       }
       const cached = pagesByIdRef.current[id]
@@ -224,10 +248,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       window.localStorage.setItem(PAGE_KEY, id)
       window.localStorage.setItem(SPACE_KEY, nextSpaceId)
       setTabs((current) => {
-        const exists = current.some((tab) => tab.pageId === id)
-        const nextTabs = exists ? current : [...current, { pageId: id, spaceId: nextSpaceId }]
-        window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
-        return nextTabs
+        const pinned = placeTab(current, id, nextSpaceId, Boolean(options?.newTab))
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(pinned))
+        return pinned
       })
       setOpenSpaceIds((current) => {
         const nextOpen = current.includes(nextSpaceId) ? current : [...current, nextSpaceId]
@@ -240,67 +263,33 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setPage(next)
       setActiveFolderId(next.folderId)
     },
-    [openDesk, spaceId, spaces, storePage, trees]
+    [openDesk, placeTab, rememberGuideData, spaceId, spaces, storePage, trees]
   )
 
   useEffect(() => {
     selectPageRef.current = selectPage
   }, [selectPage])
 
-  const openDaily = useCallback(
-    async (hostSpace: string, date = new Date()) => {
-      const space = spaces.find((item) => item.id === hostSpace)
-      if (!space) return
-      const title = dailyTitle(date)
-      let tree = trees[hostSpace]
-      if (!tree) tree = await refreshTree(hostSpace)
-      const existing = collectPages({ [hostSpace]: tree }).find((hit) => hit.page.title === title)
-      if (existing) {
-        await selectPage(existing.page.id, hostSpace)
-        return
-      }
-      const journal =
-        tree.folders.find((folder) => folder.name === 'Journal') ??
-        (await (async () => {
-          const created = await api.folders.create({ spaceId: hostSpace, name: 'Journal' })
-          await api.folders.update({
-            id: created.id,
-            icon: 'Calendar',
-            iconColor: space.iconColor
-          })
-          return created
-        })())
-      const created = await api.pages.create({
-        spaceId: hostSpace,
-        folderId: journal.id,
-        type: 'markdown',
-        title,
-        content: JSON.stringify(dailyDoc(date))
-      })
-      await refreshTree(hostSpace)
-      await selectPage(created.id, hostSpace)
-    },
-    [refreshTree, selectPage, spaces, trees]
-  )
-
   const closeTab = useCallback(
     (pageId: string) => {
+      if (isDeskPageId(pageId)) return
       setTabs((current) => {
-        const nextTabs = current.filter((tab) => tab.pageId !== pageId)
+        const host = spaceId ?? current.find((tab) => !isDeskPageId(tab.pageId))?.spaceId ?? ''
+        const nextTabs = pinDesk(
+          current.filter((tab) => tab.pageId !== pageId),
+          host
+        )
         window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
         dropPages([pageId])
         if (page?.id === pageId) {
           const fallback = nextTabs.at(-1)
           if (fallback) void selectPage(fallback.pageId, fallback.spaceId)
-          else {
-            setPage(null)
-            window.localStorage.removeItem(PAGE_KEY)
-          }
+          else openDesk()
         }
         return nextTabs
       })
     },
-    [dropPages, page?.id, selectPage]
+    [dropPages, openDesk, page?.id, selectPage, spaceId]
   )
 
   const selectSpace = useCallback((id: string) => {
@@ -330,7 +319,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     booted.current = true
     void (async () => {
       try {
-        const { list } = await refreshSpaces()
+        const { list, trees: nextTrees } = await refreshSpaces()
+        const config = await api.app.getConfig()
         const storedOpen = window.localStorage.getItem(OPEN_SPACES_KEY)
         const storedTabs = window.localStorage.getItem(TABS_KEY)
         const storedPage = window.localStorage.getItem(PAGE_KEY)
@@ -342,10 +332,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         } catch {
           parsedTabs = []
         }
-        const validTabs = parsedTabs.filter(
-          (tab) => isGuidePageId(tab.pageId) || list.some((space) => space.id === tab.spaceId)
+        const hostSpace =
+          (storedSpace && list.some((space) => space.id === storedSpace)
+            ? storedSpace
+            : list[0]?.id) ?? ''
+        const validTabs = pinDesk(
+          parsedTabs.filter(
+            (tab) =>
+              isGuidePageId(tab.pageId) ||
+              (!isDeskPageId(tab.pageId) && list.some((space) => space.id === tab.spaceId))
+          ),
+          hostSpace
         )
         setTabs(validTabs)
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(validTabs))
+        storePage(buildDeskPage(hostSpace))
 
         let parsedOpen: string[] = []
         try {
@@ -367,12 +368,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
             : (list[0]?.id ?? null)
         if (preferredSpace) setSpaceId(preferredSpace)
 
+        const welcome = collectPages(nextTrees).find((item) => item.page.title === 'Welcome')
         const preferredPage =
-          storedPage && validTabs.some((tab) => tab.pageId === storedPage)
+          storedPage &&
+          !isDeskPageId(storedPage) &&
+          validTabs.some((tab) => tab.pageId === storedPage)
             ? validTabs.find((tab) => tab.pageId === storedPage)
             : validTabs[0]
-        if (preferredPage) {
+        if (config.seededThisLaunch && welcome) {
+          await selectPageRef.current(welcome.page.id, welcome.spaceId)
+        } else if (preferredPage) {
           await selectPageRef.current(preferredPage.pageId, preferredPage.spaceId)
+        } else {
+          await selectPageRef.current(DESK_PAGE_ID, hostSpace)
         }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Failed to load workspace')
@@ -380,7 +388,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         setReady(true)
       }
     })()
-  }, [refreshSpaces])
+  }, [refreshSpaces, storePage])
 
   const selectFolder = useCallback((nextSpaceId: string, folderId: string | null) => {
     setSpaceId(nextSpaceId)
@@ -556,21 +564,34 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     async (id: string) => {
       await api.spaces.delete({ id })
       setTabs((current) => {
-        const removed = current.filter((tab) => tab.spaceId === id).map((tab) => tab.pageId)
+        const removed = current
+          .filter((tab) => tab.spaceId === id && !isDeskPageId(tab.pageId))
+          .map((tab) => tab.pageId)
         dropPages(removed)
-        return current.filter((tab) => tab.spaceId !== id)
+        return current.filter((tab) => tab.spaceId !== id || isDeskPageId(tab.pageId))
       })
-      if (page?.spaceId === id) {
-        setPage(null)
-      }
       const { list } = await refreshSpaces()
+      const nextHost = list[0]?.id ?? ''
       if (list[0] && spaceId === id) setSpaceId(list[0].id)
-      if (!list[0]) {
-        setSpaceId(null)
-        setPage(null)
+      if (!list[0]) setSpaceId(null)
+      setTabs((current) => {
+        const pinned = pinDesk(
+          current.filter(
+            (tab) => isDeskPageId(tab.pageId) || list.some((space) => space.id === tab.spaceId)
+          ),
+          nextHost
+        )
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(pinned))
+        return pinned
+      })
+      storePage(buildDeskPage(nextHost))
+      if (page?.id && isDeskPageId(page.id)) {
+        setPage(buildDeskPage(nextHost))
+      } else if (page?.spaceId === id) {
+        openDesk()
       }
     },
-    [dropPages, page?.spaceId, refreshSpaces, spaceId]
+    [dropPages, openDesk, page, refreshSpaces, spaceId, storePage]
   )
 
   const deleteFolder = useCallback(
@@ -582,23 +603,66 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     [activeFolderId, refreshTree, spaceId]
   )
 
+  const archivePage = useCallback(
+    async (id: string) => {
+      if (isLockedPageId(id)) return
+      const updated = await api.pages.update({ id, archived: true })
+      dropPages([id])
+      setTabs((current) => {
+        const host = spaceId ?? spaces[0]?.id ?? ''
+        const nextTabs = pinDesk(
+          current.filter((tab) => tab.pageId !== id),
+          host
+        )
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
+        return nextTabs
+      })
+      if (pageRef.current?.id === id) openDesk()
+      await refreshTree(updated.spaceId)
+    },
+    [dropPages, openDesk, refreshTree, spaceId, spaces]
+  )
+
+  const unarchivePage = useCallback(
+    async (id: string) => {
+      const updated = await api.pages.update({ id, archived: false })
+      storePage(updated)
+      await refreshTree(updated.spaceId)
+    },
+    [refreshTree, storePage]
+  )
+
+  const changePageType = useCallback(
+    async (id: string, type: PageType) => {
+      if (isLockedPageId(id)) return
+      const updated = await api.pages.update({ id, type })
+      storePage(updated)
+      setPage((current) => (current?.id === id ? updated : current))
+      await refreshTree(updated.spaceId)
+    },
+    [refreshTree, storePage]
+  )
+
   const deletePage = useCallback(
     async (id: string) => {
       const spaceForPage = page?.id === id ? page.spaceId : spaceId
       await api.pages.delete({ id })
       dropPages([id])
       setTabs((current) => {
-        const nextTabs = current.filter((tab) => tab.pageId !== id)
+        const host = spaceId ?? spaces[0]?.id ?? ''
+        const nextTabs = pinDesk(
+          current.filter((tab) => tab.pageId !== id),
+          host
+        )
         window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
         return nextTabs
       })
       if (page?.id === id) {
-        setPage(null)
-        window.localStorage.removeItem(PAGE_KEY)
+        openDesk()
       }
       if (spaceForPage) await refreshTree(spaceForPage)
     },
-    [dropPages, page, refreshTree, spaceId]
+    [dropPages, openDesk, page, refreshTree, spaceId, spaces]
   )
 
   const value = useMemo<WorkspaceContextValue>(
@@ -618,8 +682,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       selectPage,
       openGuide,
       openDesk,
-      openDaily,
       closeTab,
+      showArchived,
+      setShowArchived,
+      archivePage,
+      unarchivePage,
+      changePageType,
       selectFolder,
       createSpace,
       createFolder,
@@ -646,6 +714,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     }),
     [
       activeFolderId,
+      archivePage,
+      changePageType,
       closeTab,
       createFolder,
       createPage,
@@ -658,7 +728,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       duplicateSpace,
       error,
       importCsv,
-      openDaily,
       openDesk,
       openGuide,
       openSpaceIds,
@@ -684,7 +753,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       updateSpaceAppearance,
       setSpaceSecretsExposed,
       runningPageIds,
-      setPageRunning
+      setPageRunning,
+      showArchived,
+      setShowArchived,
+      unarchivePage
     ]
   )
 

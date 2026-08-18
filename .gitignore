@@ -10,3 +10,4 @@ src/generated
 prisma/*.db
 prisma/*.db-journal
 release
+*.node

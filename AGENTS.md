@@ -21,8 +21,9 @@ Add a server method in `src/main/procedures.ts` **and** the matching type on `Ap
 - Do not put secrets back in Settings. They belong on the **space** menu.
 - Do not store secret values in the renderer, logs, or localStorage.
 - Do not fall back to plaintext if `safeStorage` is unavailable.
-- Virtual pages (`paper:guide`, `paper:desk:…`) are not in the database. Never `api.pages.get` them. Rename / save / appearance are no-ops.
-- Closing the last tab shows the **desk**. Do not auto-open the first real page.
+- Virtual pages (`paper:guide`, `paper:desk`, `paper:guide:orders`, `paper:guide:products`) are not in the user tree. Guide sample CSVs are hidden and must keep working after the user deletes seed data.
+- The desk is a single **pinned** root tab (icon only, cannot close). Do not create a desk per space.
+- Opening a page replaces the current tab unless the user middle-clicks or chooses **Open in new tab**. `⌘1`–`⌘9` skip the desk.
 - Renderer HMR does not reload main. After RPC, runner, sealing, or window options change, restart `pnpm dev`.
 - After Prisma schema changes: migrate, `pnpm db:generate`, rebuild native if the client ABI shifted.
 
@@ -34,7 +35,9 @@ A click-drag **multi-block Markdown selection** (including custom nodes) was add
 
 | Concern | Start here |
 | --- | --- |
-| Window, menu, Cmd+W | `src/main/index.ts` |
+| Window, menu, Cmd+W, app name | `src/main/index.ts` |
+| Auto-update | `src/main/updates.ts`, Settings → Updates |
+| Installers / identity | `electron-builder.yml`, `docs/release.md` |
 | RPC handlers | `src/main/procedures.ts` |
 | Script VM | `src/main/runner.ts` |
 | Seal / unseal / `$secret` | `src/main/secrets.ts` |
@@ -52,9 +55,9 @@ A click-drag **multi-block Markdown selection** (including custom nodes) was add
 ## Virtual page IDs
 
 - `paper:guide` — built-in Guide, Markdown, read-only, BookOpen / slate
-- `paper:desk:${spaceId}` — Desk for that space, House / space color
+- `paper:desk` — one root Desk, House / slate, always first in the tab strip
 
-`selectPage` must branch on these **before** any database fetch. `validTabs` may keep a guide tab even if its host space is gone; desk tabs die with their space.
+`selectPage` must branch on these **before** any database fetch. `validTabs` may keep a guide tab even if its host space is gone. The desk tab is always pinned via `pinDesk`.
 
 ## Runner
 
@@ -70,7 +73,7 @@ A click-drag **multi-block Markdown selection** (including custom nodes) was add
 ## Native / Prisma
 
 - Prisma 7 client output: `src/generated/prisma` (gitignored).
-- SQLite via `better-sqlite3`. Must be rebuilt for the **Electron** ABI, not system Node (`pnpm rebuild:native`).
+- SQLite via `better-sqlite3`. Must be rebuilt for the **Electron** ABI, not system Node (`pnpm rebuild:native`). Packaged apps load `resources/better_sqlite3.node` (`nativeBinding` in `db.ts`) — asar stores a 0-byte stub. `before-pack.cjs` rebuilds for the host OS or downloads a matching prebuild when cross-packing Windows from macOS; `after-pack.cjs` copies the binary next to the app resources.
 - Electron is ABI 140 as of this writing; a stale Prisma client looks like missing models/fields.
 
 ## Main-process menu

@@ -30,4 +30,6 @@ Dev database: `prisma/dev.db`. Production uses the app userData directory.
 | [docs/architecture.md](./docs/architecture.md) | Process split, IPC, data, runner |
 | [docs/helpers.md](./docs/helpers.md) | The `$` library scripts get |
 
+Installers and updates: [docs/release.md](./docs/release.md).
+
 Remote: `git@personal:LoganGillis/paper-code.git`

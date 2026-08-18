@@ -11,16 +11,15 @@ import {
   FolderPlus,
   KeyRound,
   Plus,
+  SquareArrowOutUpRight,
   Trash2
 } from 'lucide-react'
-import type { IconColorId } from '@shared/icons'
 import type { FolderNode, PageSummary, SpaceTree } from '@shared/api'
 import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { TypeBadge } from '@/components/type-badge'
 import { cn } from '@/lib/utils'
 import { EditableLabel } from '@/components/editable-label'
-import { IconBadge, IconPicker } from '@/components/icon-picker'
-import { isDeskPageId } from '@/lib/desk'
+import { IconPicker } from '@/components/icon-picker'
 import { ItemMenu } from '@/components/item-menu'
 import { SecretsDialog } from '@/components/secrets-dialog'
 import {
@@ -46,6 +45,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/rpc'
+import { wantsNewTab } from '@/lib/platform'
 import { useWorkspace } from '@/lib/workspace'
 
 async function copyText(value: string): Promise<void> {
@@ -66,6 +66,8 @@ function PageRow({
     selectPage,
     renamePage,
     deletePage,
+    archivePage,
+    unarchivePage,
     selectFolder,
     updatePageAppearance,
     duplicatePage
@@ -90,9 +92,16 @@ function PageRow({
           <button
             type="button"
             className="flex min-w-0 flex-1 items-center text-left"
-            onClick={() => {
+            onClick={(event) => {
               selectFolder(spaceId, page.folderId)
-              void selectPage(page.id, spaceId)
+              void selectPage(page.id, spaceId, { newTab: wantsNewTab(event) })
+            }}
+            onAuxClick={(event) => {
+              if (event.button !== 1) return
+              event.preventDefault()
+              event.stopPropagation()
+              selectFolder(spaceId, page.folderId)
+              void selectPage(page.id, spaceId, { newTab: true })
             }}
           >
             <EditableLabel
@@ -113,6 +122,8 @@ function PageRow({
                 onCopy={() => {
                   void api.pages.get({ id: page.id }).then((full) => copyText(full.content))
                 }}
+                onArchive={page.archived ? undefined : () => void archivePage(page.id)}
+                onUnarchive={page.archived ? () => void unarchivePage(page.id) : undefined}
                 onDelete={() => void deletePage(page.id)}
               />
             </div>
@@ -120,6 +131,15 @@ function PageRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem
+          onSelect={() => {
+            selectFolder(spaceId, page.folderId)
+            void selectPage(page.id, spaceId, { newTab: true })
+          }}
+        >
+          <SquareArrowOutUpRight className="size-3.5" />
+          Open in new tab
+        </ContextMenuItem>
         <ContextMenuItem onSelect={() => void duplicatePage(page.id)}>
           <CopyPlus className="size-3.5" />
           Duplicate
@@ -133,6 +153,11 @@ function PageRow({
           Copy
         </ContextMenuItem>
         <ContextMenuSeparator />
+        {page.archived ? (
+          <ContextMenuItem onSelect={() => void unarchivePage(page.id)}>Unarchive</ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={() => void archivePage(page.id)}>Archive</ContextMenuItem>
+        )}
         <ContextMenuItem
           className="text-destructive focus:text-destructive"
           onSelect={() => void deletePage(page.id)}
@@ -187,6 +212,7 @@ function FolderRow({
             <IconPicker
               icon={folder.icon}
               color={folder.iconColor}
+              variant="plain"
               onChange={(appearance) => void updateFolderAppearance(folder.id, appearance)}
             />
             <button
@@ -250,30 +276,26 @@ function FolderRow({
   )
 }
 
-function DeskRow({ spaceId, color }: { spaceId: string; color: IconColorId }): React.JSX.Element {
-  const { page, openDesk } = useWorkspace()
-  const active = Boolean(page && isDeskPageId(page.id) && page.spaceId === spaceId)
-
-  return (
-    <button
-      type="button"
-      className={cn(
-        'flex h-8 w-full items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
-        active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70'
-      )}
-      style={{ paddingLeft: 10 }}
-      onClick={() => openDesk(spaceId)}
-    >
-      <IconBadge icon="House" color={color} className="size-6" />
-      <span className="min-w-0 flex-1 truncate text-left">Desk</span>
-    </button>
-  )
-}
-
 export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element {
+  const { showArchived } = useWorkspace()
+  const archived = tree.archivedPages ?? []
+
+  if (showArchived) {
+    return (
+      <div className="pb-2">
+        {archived.length === 0 ? (
+          <p className="px-3 py-2 text-[12px] text-muted-foreground">Nothing archived here.</p>
+        ) : (
+          archived.map((page) => (
+            <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
+          ))
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="pb-2">
-      <DeskRow spaceId={tree.space.id} color={tree.space.iconColor} />
       {tree.folders.map((folder) => (
         <FolderRow key={folder.id} folder={folder} spaceId={tree.space.id} depth={0} />
       ))}
@@ -316,6 +338,7 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
             <IconPicker
               icon={tree.space.icon}
               color={tree.space.iconColor}
+              variant="plain"
               onChange={(appearance) => void updateSpaceAppearance(tree.space.id, appearance)}
             />
             <button
