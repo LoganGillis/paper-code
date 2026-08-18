@@ -1,0 +1,344 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChartColumn, Play, Table2 } from 'lucide-react'
+import { ICON_ACCENT } from '@shared/icons'
+import type { Page, RunResult } from '@shared/api'
+import { api } from '@/lib/rpc'
+import { useWorkspace } from '@/lib/workspace'
+import { Button } from '@/components/ui/button'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { CodeEditor } from '@/components/code-editor'
+import { CsvChart } from '@/components/csv-chart'
+import { CsvEditor } from '@/components/csv-editor'
+import { IconBadge, IconPicker } from '@/components/icon-picker'
+import { MarkdownEditor } from '@/components/markdown-editor'
+import { DeskBlotter } from '@/components/desk-blotter'
+import { isDeskPageId } from '@/lib/desk'
+import { isGuidePageId } from '@/lib/guide'
+import { loadChartSpec, saveChartSpec, type ChartSpec } from '@/lib/chart-data'
+import { RUN_ACCENT } from '@/lib/run-accent'
+import { cn } from '@/lib/utils'
+import { modSymbol } from '@/lib/platform'
+
+function useDebouncedSaver(pageId: string, save: (id: string, content: string) => Promise<void>) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current)
+    }
+  }, [pageId])
+
+  return (content: string) => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      void save(pageId, content)
+    }, 400)
+  }
+}
+
+function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.Element {
+  const {
+    renamePage,
+    savePageContent,
+    savePageDescription,
+    updatePageAppearance,
+    runningPageIds,
+    setPageRunning,
+    preserveEditorFocus
+  } = useWorkspace()
+  const [title, setTitle] = useState(page.title)
+  const [source, setSource] = useState(page.content)
+  const [run, setRun] = useState<RunResult | null>(null)
+  const running = runningPageIds.includes(page.id)
+  const [consoleHeight, setConsoleHeight] = useState(() => {
+    const stored = Number(window.localStorage.getItem('paper.consoleHeight'))
+    return Number.isFinite(stored) && stored >= 88 ? stored : 144
+  })
+  const saveContent = useDebouncedSaver(page.id, savePageContent)
+  const saveDescription = useDebouncedSaver(page.id, savePageDescription)
+  const locked = isGuidePageId(page.id)
+  const isCode = page.type === 'javascript' || page.type === 'typescript'
+  const isCsv = page.type === 'csv'
+  const [csvView, setCsvView] = useState<'table' | 'chart'>(() =>
+    window.localStorage.getItem(`paper.csvView.${page.id}`) === 'chart' ? 'chart' : 'table'
+  )
+  const [chartSpec, setChartSpec] = useState<ChartSpec | null>(() => loadChartSpec(page.id))
+
+  useEffect(() => {
+    setTitle(page.title)
+  }, [page.title])
+
+  const onRun = useCallback(async () => {
+    if (page.type !== 'javascript' && page.type !== 'typescript') return
+    setPageRunning(page.id, true)
+    try {
+      setRun(
+        await api.run.execute({
+          language: page.type,
+          source,
+          spaceId: page.spaceId,
+          pageId: page.id
+        })
+      )
+    } finally {
+      setPageRunning(page.id, false)
+    }
+  }, [page.id, page.spaceId, page.type, setPageRunning, source])
+
+  return (
+    <article
+      className="accent-select flex h-full min-h-0 flex-col select-text"
+      style={{ '--page-accent': ICON_ACCENT[page.iconColor] } as React.CSSProperties}
+    >
+      <header
+        className={cn(
+          'shrink-0',
+          isCode || isCsv ? 'px-6 pt-6 pb-3' : 'mx-auto w-full max-w-3xl px-10 pt-10 pb-4'
+        )}
+      >
+        <div className="mb-3 flex items-center gap-3">
+          {locked ? (
+            <IconBadge icon={page.icon} color={page.iconColor} className="size-9" />
+          ) : (
+            <IconPicker
+              icon={page.icon}
+              color={page.iconColor}
+              size="lg"
+              onChange={(appearance) => void updatePageAppearance(page.id, appearance)}
+            />
+          )}
+          {locked ? (
+            <h1 className="w-full text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
+              {page.title}
+            </h1>
+          ) : (
+            <input
+              value={title}
+              aria-label="Page title"
+              className="w-full bg-transparent text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em] outline-none placeholder:text-muted-foreground/70"
+              placeholder="Untitled"
+              onChange={(event) => setTitle(event.target.value)}
+              onBlur={() => {
+                const next = title.trim()
+                if (next && next !== page.title) void renamePage(page.id, next)
+              }}
+            />
+          )}
+        </div>
+        {isCode || isCsv ? (
+          <MarkdownEditor
+            content={page.description}
+            compact
+            placeholder="Add a description or instructions"
+            onChange={(description) => saveDescription(description)}
+          />
+        ) : null}
+      </header>
+
+      {page.type === 'markdown' ? (
+        <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-auto px-10 pr-12 pb-8">
+          <MarkdownEditor
+            content={page.content}
+            restoreFocus={active && preserveEditorFocus}
+            pageId={page.id}
+            spaceId={page.spaceId}
+            readOnly={locked}
+            placeholder={locked ? '' : undefined}
+            onChange={(content) => saveContent(content)}
+          />
+        </div>
+      ) : null}
+
+      {isCsv ? (
+        <div className="flex min-h-0 flex-1 flex-col border-t border-border/50">
+          <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
+            <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
+              csv
+            </p>
+            <div className="flex rounded-md bg-sidebar p-0.5">
+              {(
+                [
+                  { id: 'table' as const, label: 'Table', icon: Table2 },
+                  { id: 'chart' as const, label: 'Chart', icon: ChartColumn }
+                ] as const
+              ).map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className={cn(
+                    'h-6 gap-1 px-2 text-[11px]',
+                    csvView === item.id && 'bg-paper text-foreground shadow-sm'
+                  )}
+                  onClick={() => {
+                    setCsvView(item.id)
+                    window.localStorage.setItem(`paper.csvView.${page.id}`, item.id)
+                  }}
+                >
+                  <item.icon className="size-3.5" />
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {csvView === 'table' ? (
+            <CsvEditor
+              active={active}
+              content={page.content}
+              onChange={(next) => {
+                setSource(next)
+                saveContent(next)
+              }}
+            />
+          ) : (
+            <CsvChart
+              content={source || page.content}
+              spec={chartSpec ?? undefined}
+              accent={page.iconColor}
+              height={320}
+              onSpecChange={(next) => {
+                setChartSpec(next)
+                saveChartSpec(page.id, next)
+              }}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {isCode ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between border-t border-border/60 px-4 py-2">
+            <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
+              {page.type}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              className={cn('shadow-none', RUN_ACCENT[page.iconColor])}
+              onClick={() => void onRun()}
+              disabled={running}
+            >
+              <Play />
+              {running ? 'Running' : 'Run'}
+              <KbdGroup className="ml-1 opacity-80">
+                <Kbd className="bg-current/15 text-current">{modSymbol()}</Kbd>
+                <Kbd className="bg-current/15 text-current">↵</Kbd>
+              </KbdGroup>
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden border-t border-border/60">
+            <CodeEditor
+              active={active}
+              accent={page.iconColor}
+              restoreFocus={active && preserveEditorFocus}
+              onRun={() => void onRun()}
+              value={source}
+              language={page.type === 'typescript' ? 'typescript' : 'javascript'}
+              onChange={(content) => {
+                setSource(content)
+                saveContent(content)
+              }}
+            />
+          </div>
+          <div
+            className="console-resizer shrink-0"
+            onMouseDown={(event) => {
+              event.preventDefault()
+              const startY = event.clientY
+              const startH = consoleHeight
+              const onMove = (move: MouseEvent): void => {
+                const next = Math.min(420, Math.max(88, startH + (startY - move.clientY)))
+                setConsoleHeight(next)
+                window.localStorage.setItem('paper.consoleHeight', String(next))
+              }
+              const onUp = (): void => {
+                window.removeEventListener('mousemove', onMove)
+                window.removeEventListener('mouseup', onUp)
+              }
+              window.addEventListener('mousemove', onMove)
+              window.addEventListener('mouseup', onUp)
+            }}
+          />
+          <section
+            className="shrink-0 overflow-auto bg-sidebar/50 px-4 py-2 select-text"
+            style={{ height: consoleHeight }}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
+                Output
+              </p>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setRun(null)}>
+                Clear console
+              </Button>
+            </div>
+            {!run ? (
+              <p className="font-mono text-sm text-muted-foreground">
+                Run the snippet to see logs here.
+              </p>
+            ) : (
+              <div className="font-mono text-[13px] leading-6">
+                {run.logs.map((line, index) => (
+                  <p
+                    key={`${line.level}-${index}`}
+                    className={cn(
+                      line.level === 'error' && 'text-destructive',
+                      line.level === 'warn' && 'text-amber-800 dark:text-amber-200'
+                    )}
+                  >
+                    {line.message}
+                  </p>
+                ))}
+                {run.result ? <p className="text-ink-soft">{run.result}</p> : null}
+                {run.error ? <p className="text-destructive">{run.error}</p> : null}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+export function PageView(): React.JSX.Element {
+  const { tabs, page, pagesById, spaces, spaceId } = useWorkspace()
+  const deskSpace = spaces.find((space) => space.id === spaceId) ?? spaces[0] ?? null
+
+  if (tabs.length === 0) {
+    if (!deskSpace) {
+      return (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          Create a space to sit down.
+        </div>
+      )
+    }
+    return <DeskBlotter space={deskSpace} />
+  }
+
+  return (
+    <div className="relative h-full">
+      {tabs.map((tab) => {
+        const tabPage = pagesById[tab.pageId]
+        if (!tabPage) return null
+        const active = page?.id === tab.pageId
+        const space = spaces.find((item) => item.id === tabPage.spaceId)
+        return (
+          <div
+            key={tab.pageId}
+            className={cn(
+              'absolute inset-0 min-h-0',
+              active ? 'z-10' : 'invisible pointer-events-none z-0'
+            )}
+            aria-hidden={!active}
+          >
+            {isDeskPageId(tabPage.id) && space ? (
+              <DeskBlotter space={space} />
+            ) : (
+              <PagePane page={tabPage} active={active} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}

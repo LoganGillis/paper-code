@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// A workspace, like a Notion teamspace or Confluence space.
+model Space {
+  id        String   @id @default(cuid())
+  name      String
+  icon      String   @default("BookOpen")
+  iconColor String   @default("slate")
+  secretsExposed Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  folders        Folder[]
+  pages          Page[]
+  secrets        Secret[]
+}
+
+/// Nested folder inside a space.
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  icon      String   @default("Folder")
+  iconColor String   @default("slate")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Folder[] @relation("FolderTree")
+
+  pages Page[]
+}
+
+/// A markdown note or a JS/TS snippet.
+model Page {
+  id          String   @id @default(cuid())
+  title       String
+  type        String
+  content     String   @default("")
+  description String   @default("")
+  icon        String   @default("FileText")
+  iconColor   String   @default("slate")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  folderId String?
+  folder   Folder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+}
+
+/// Encrypted secrets scoped to a space. Values are sealed with OS keychain storage.
+model Secret {
+  id        String   @id @default(cuid())
+  key       String
+  valueEnc  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, key])
+}
