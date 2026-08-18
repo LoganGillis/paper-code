@@ -1,22 +1,10 @@
 # Paper
 
-A Notion-like desktop notebook for Markdown notes and small JavaScript / TypeScript snippets.
+A desktop notebook for notes, tables, and scripts. Electron, not a website.
 
-Spaces hold folders; folders hold pages. Markdown edits live, like Notion. Code pages run in an isolated main-process VM.
+Spaces hold folders and pages. Pages are Markdown, JavaScript, TypeScript, or CSV. Scripts run in a main-process VM with a small `$` standard library. Secrets stay sealed in the OS keychain.
 
-## Layout
-
-```
-Space
-  Folder
-    Page (markdown | javascript | typescript)
-    Folder
-      Page
-```
-
-Pages can also live at the space root.
-
-## Scripts
+## Run
 
 ```bash
 pnpm install
@@ -25,20 +13,21 @@ pnpm dev
 
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | Run the app with HMR |
-| `pnpm db:migrate` | Create / apply Prisma migrations |
-| `pnpm db:studio` | Open Prisma Studio |
-| `pnpm rebuild:native` | Rebuild `better-sqlite3` for Electron |
+| `pnpm dev` | App with HMR (renderer). Main-process changes need a restart. |
+| `pnpm typecheck` | Node + web TypeScript |
+| `pnpm db:migrate` | Prisma migrations |
+| `pnpm db:studio` | Prisma Studio |
+| `pnpm rebuild:native` | Rebuild `better-sqlite3` for this Electron ABI |
 
-## Writing
+Dev database: `prisma/dev.db`. Production uses the app userData directory.
 
-- Double-click a tree item to rename it
-- `+` in the sidebar creates a page, snippet, or folder in the selected folder
-- In Markdown, type `/` at the start of a line for headings, lists, quotes, and code blocks
-- On a JS/TS page, **Run** executes the snippet and prints `console` output below
+## Docs
 
-Snippets are scripts: no `import` / `require`, no filesystem. TypeScript is stripped with Sucrase, then run in `vm`.
+| File | What’s in it |
+| --- | --- |
+| [AGENTS.md](./AGENTS.md) | How to change the app without breaking it |
+| [docs/product.md](./docs/product.md) | Features, UX decisions, shortcuts |
+| [docs/architecture.md](./docs/architecture.md) | Process split, IPC, data, runner |
+| [docs/helpers.md](./docs/helpers.md) | The `$` library scripts get |
 
-## Server functions
-
-Add a method to `src/main/procedures.ts` and the matching type on `AppApi` in `src/shared/api.ts`. Call it from the renderer with `api.*`.
+Remote: `git@personal:LoganGillis/paper-code.git`
