@@ -51,6 +51,9 @@ export function buildGuideDataPages(spaceId: string): Page[] {
       iconColor: 'sage',
       sortOrder: 0,
       archived: false,
+      deletedAt: null,
+      locked: true,
+      spellcheck: false,
       createdAt: now,
       updatedAt: now
     },
@@ -66,6 +69,9 @@ export function buildGuideDataPages(spaceId: string): Page[] {
       iconColor: 'mint',
       sortOrder: 1,
       archived: false,
+      deletedAt: null,
+      locked: true,
+      spellcheck: false,
       createdAt: now,
       updatedAt: now
     }

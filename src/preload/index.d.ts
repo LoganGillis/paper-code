@@ -8,6 +8,10 @@ declare global {
       invoke: (path: string, input?: unknown) => Promise<RpcResult>
       onCloseTab: (callback: () => void) => () => void
       onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void
+      setTitle: (title: string) => void
+      onSpellContext: (
+        callback: (payload: { misspelledWord: string; suggestions: string[] }) => void
+      ) => () => void
     }
   }
 }

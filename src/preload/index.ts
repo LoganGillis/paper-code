@@ -20,6 +20,21 @@ const api = {
     return () => {
       ipcRenderer.removeListener('paper:update-status', listener)
     }
+  },
+  setTitle: (title: string): void => {
+    ipcRenderer.send('paper:set-title', title)
+  },
+  onSpellContext: (
+    callback: (payload: { misspelledWord: string; suggestions: string[] }) => void
+  ): (() => void) => {
+    const listener = (
+      _event: unknown,
+      payload: { misspelledWord: string; suggestions: string[] }
+    ): void => callback(payload)
+    ipcRenderer.on('paper:spell-context', listener)
+    return () => {
+      ipcRenderer.removeListener('paper:spell-context', listener)
+    }
   }
 }
 

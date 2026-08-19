@@ -1,10 +1,20 @@
+import { useEffect } from 'react'
+import { displayTitle } from '@shared/titles'
 import { PageView } from '@/components/page-view'
+import { SavedFlashProvider } from '@/components/saved-flash'
 import { Sidebar } from '@/components/sidebar'
 import { TabBar } from '@/components/tab-bar'
+import { isDeskPageId } from '@/lib/desk'
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace'
 
 function Shell(): React.JSX.Element {
-  const { ready, error } = useWorkspace()
+  const { ready, error, page } = useWorkspace()
+
+  useEffect(() => {
+    if (!window.api?.setTitle) return
+    if (!page || isDeskPageId(page.id)) window.api.setTitle('Paper')
+    else window.api.setTitle(`Paper - ${displayTitle(page.title)}`)
+  }, [page])
 
   if (!ready) {
     return (
@@ -38,7 +48,9 @@ function Shell(): React.JSX.Element {
 function App(): React.JSX.Element {
   return (
     <WorkspaceProvider>
-      <Shell />
+      <SavedFlashProvider>
+        <Shell />
+      </SavedFlashProvider>
     </WorkspaceProvider>
   )
 }

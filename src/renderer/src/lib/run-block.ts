@@ -109,6 +109,9 @@ export function buildBlockPage(
     iconColor: parent.iconColor,
     sortOrder: 0,
     archived: false,
+    deletedAt: null,
+    locked: false,
+    spellcheck: false,
     createdAt: now,
     updatedAt: now
   }

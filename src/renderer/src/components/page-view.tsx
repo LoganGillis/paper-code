@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChartColumn, Play, Table2, X } from 'lucide-react'
+import { ArrowLeft, ChartColumn, Play, Plus, Table2, X } from 'lucide-react'
 import { ICON_ACCENT } from '@shared/icons'
 import type { Page, RunResult } from '@shared/api'
 import { api } from '@/lib/rpc'
@@ -19,6 +19,81 @@ import { loadChartSpec, saveChartSpec, type ChartSpec } from '@/lib/chart-data'
 import { RUN_ACCENT } from '@/lib/run-accent'
 import { cn } from '@/lib/utils'
 import { modSymbol } from '@/lib/platform'
+import { PageActions } from '@/components/page-actions'
+import { RunOutput } from '@/components/run-output'
+import { useSavedFlash } from '@/components/saved-flash'
+
+function descriptionHasText(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content) as { content?: Array<{ content?: Array<{ text?: string }> }> }
+    const text = (parsed.content ?? [])
+      .flatMap((node) => node.content ?? [])
+      .map((node) => node.text ?? '')
+      .join('')
+    return text.trim().length > 0
+  } catch {
+    return content.trim().length > 0
+  }
+}
+
+function DescriptionField({
+  content,
+  onChange
+}: {
+  content: string
+  onChange: (value: string) => void
+}): React.JSX.Element {
+  const filled = descriptionHasText(content)
+  const [open, setOpen] = useState(filled)
+  const [draft, setDraft] = useState(content)
+  const [shouldFocus, setShouldFocus] = useState(false)
+
+  useEffect(() => {
+    setDraft(content)
+    if (descriptionHasText(content)) setOpen(true)
+  }, [content])
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="text-[13px] text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          setShouldFocus(true)
+          setOpen(true)
+        }}
+      >
+        <span className="inline-flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <Plus className="size-3" />
+          Add a description
+        </span>
+      </button>
+    )
+  }
+  return (
+    <div
+      className="text-muted-foreground"
+      onBlur={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return
+        if (!descriptionHasText(draft)) {
+          setShouldFocus(false)
+          setOpen(false)
+        }
+      }}
+    >
+      <MarkdownEditor
+        content={content}
+        compact
+        restoreFocus={shouldFocus}
+        placeholder="Add a description or instructions"
+        onChange={(value) => {
+          setDraft(value)
+          onChange(value)
+        }}
+      />
+    </div>
+  )
+}
 
 function useDebouncedSaver(pageId: string, save: (id: string, content: string) => Promise<void>) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -49,8 +124,10 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     preserveEditorFocus,
     pagesById,
     selectPage,
-    saveBlockContent
+    saveBlockContent,
+    flushSave
   } = useWorkspace()
+  const { flash } = useSavedFlash()
   const [title, setTitle] = useState(page.title)
   const [source, setSource] = useState(page.content)
   const [run, setRun] = useState<RunResult | null>(null)
@@ -69,7 +146,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     await savePageContent(id, content)
   })
   const saveDescription = useDebouncedSaver(page.id, savePageDescription)
-  const locked = isGuidePageId(page.id)
+  const locked = isGuidePageId(page.id) || page.locked
   const isCode = page.type === 'javascript' || page.type === 'typescript'
   const isCsv = page.type === 'csv'
   const [csvView, setCsvView] = useState<'table' | 'chart'>(() =>
@@ -84,6 +161,19 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
   useEffect(() => {
     setSource(page.content)
   }, [page.id, page.content])
+
+  useEffect(() => {
+    if (!active) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      if (event.key.toLowerCase() !== 's') return
+      event.preventDefault()
+      if (isGuidePageId(page.id) || blockRef) return
+      void flushSave(page.id).then(() => flash())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, blockRef, flash, flushSave, page.id])
 
   const onRun = useCallback(async () => {
     if (page.type !== 'javascript' && page.type !== 'typescript') return
@@ -109,7 +199,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     >
       <header
         className={cn(
-          'shrink-0',
+          'group shrink-0',
           isCode || isCsv ? 'px-6 pt-6 pb-3' : 'mx-auto w-full max-w-3xl px-10 pt-10 pb-4'
         )}
       >
@@ -139,14 +229,14 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               </h1>
             </div>
           ) : locked ? (
-            <h1 className="w-full text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
+            <h1 className="min-w-0 flex-1 text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
               {page.title}
             </h1>
           ) : (
             <input
               value={title}
               aria-label="Page title"
-              className="w-full bg-transparent text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em] outline-none placeholder:text-muted-foreground/70"
+              className="min-w-0 flex-1 bg-transparent text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em] outline-none placeholder:text-muted-foreground/70"
               placeholder="Untitled"
               onChange={(event) => setTitle(event.target.value)}
               onBlur={() => {
@@ -155,12 +245,11 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               }}
             />
           )}
+          {blockRef || isGuidePageId(page.id) ? null : <PageActions page={page} />}
         </div>
         {(isCode || isCsv) && !blockRef ? (
-          <MarkdownEditor
+          <DescriptionField
             content={page.description}
-            compact
-            placeholder="Add a description or instructions"
             onChange={(description) => saveDescription(description)}
           />
         ) : null}
@@ -174,6 +263,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
             pageId={page.id}
             spaceId={page.spaceId}
             readOnly={locked}
+            spellcheck={page.spellcheck}
             placeholder={locked ? '' : undefined}
             onChange={(content) => saveContent(content)}
             active={active}
@@ -241,7 +331,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       {isCode ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between border-t border-border/60 px-4 py-2">
-            <div className="flex rounded-md bg-sidebar p-0.5">
+            <div className="flex rounded-sm bg-sidebar p-0.5">
               {(['javascript', 'typescript'] as const).map((id) => (
                 <Button
                   key={id}
@@ -249,7 +339,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                   size="sm"
                   variant="ghost"
                   className={cn(
-                    'h-6 px-2 text-[11px]',
+                    'h-6 rounded-sm px-2 text-[11px]',
                     page.type === id && 'bg-paper text-foreground shadow-sm'
                   )}
                   disabled={Boolean(blockRef && isGuidePageId(blockRef.pageId))}
@@ -288,7 +378,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               restoreFocus={active && preserveEditorFocus}
               onRun={() => void onRun()}
               value={source}
-              readOnly={Boolean(blockRef && isGuidePageId(blockRef.pageId))}
+              readOnly={Boolean(blockRef && isGuidePageId(blockRef.pageId)) || page.locked}
               language={page.type === 'typescript' ? 'typescript' : 'javascript'}
               onChange={(content) => {
                 setSource(content)
@@ -338,21 +428,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                 Run the snippet to see logs here.
               </p>
             ) : (
-              <div className="font-mono text-[13px] leading-6">
-                {run.logs.map((line, index) => (
-                  <p
-                    key={`${line.level}-${index}`}
-                    className={cn(
-                      line.level === 'error' && 'text-destructive',
-                      line.level === 'warn' && 'text-amber-800 dark:text-amber-200'
-                    )}
-                  >
-                    {line.message}
-                  </p>
-                ))}
-                {run.result ? <p className="text-ink-soft">{run.result}</p> : null}
-                {run.error ? <p className="text-destructive">{run.error}</p> : null}
-              </div>
+              <RunOutput run={run} />
             )}
           </section>
         </div>

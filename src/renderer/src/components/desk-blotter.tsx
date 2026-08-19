@@ -49,17 +49,20 @@ export function DeskBlotter({ active = true }: { active?: boolean }): React.JSX.
     >
       <DeskAtmosphere active={active} />
       <header className="relative z-10 mx-auto w-full max-w-3xl shrink-0 px-10 pt-10 pb-4">
-        <div className="mb-3 flex items-center gap-3">
-          <House className="size-8 text-ink-soft" strokeWidth={1.5} />
-          <h1 className="w-full text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
-            {dailyTitle(now)}
-          </h1>
+        <div className="mb-3 flex items-start gap-3">
+          <House className="mt-1 size-8 shrink-0 text-ink-soft" strokeWidth={1.5} />
+          <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
+                {dailyTitle(now)}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">{weekdayName(now)}</p>
+            </div>
+            <p className="pt-1 text-[1.65rem] leading-none font-medium tracking-[-0.03em] tabular-nums text-foreground">
+              {formatClock(now)}
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {weekdayName(now)}
-          <span className="mx-2 text-border">·</span>
-          <span className="font-mono text-[12px] tabular-nums">{formatClock(now)}</span>
-        </p>
       </header>
 
       <div className="relative z-10 mx-auto min-h-0 w-full max-w-3xl flex-1 px-10 pr-12 pb-8">

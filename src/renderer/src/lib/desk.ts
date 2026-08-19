@@ -95,6 +95,9 @@ export function buildDeskPage(spaceId: string): Page {
     iconColor: 'slate',
     sortOrder: 0,
     archived: false,
+    deletedAt: null,
+    locked: false,
+    spellcheck: false,
     createdAt: now,
     updatedAt: now
   }

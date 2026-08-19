@@ -18,77 +18,158 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Mark, mergeAttributes } from '@tiptap/core'
 import { ChartEmbed } from '@/components/md-chart-embed'
 import { CsvEmbed } from '@/components/md-csv-embed'
 import { PageLink } from '@/components/md-page-link'
 import { RunnableCode } from '@/components/md-run-block'
+import { ScriptRun } from '@/components/md-script-run'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
 import { PagePickList } from '@/components/page-picker'
 import { filterPageHits } from '@/lib/pages'
 import { setRunContext } from '@/lib/run-context'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
+import { api } from '@/lib/rpc'
 
 type SlashItem = {
   title: string
-  hint: string
+  hint?: string
+  group: string
   aliases: string[]
   icon?: React.ReactNode
   run: (editor: Editor) => void
 }
 
+const TEXT_COLORS = [
+  { label: 'Ink', value: '' },
+  { label: 'Rose', value: 'oklch(0.48 0.1 12)' },
+  { label: 'Amber', value: 'oklch(0.5 0.08 75)' },
+  { label: 'Sage', value: 'oklch(0.42 0.06 140)' },
+  { label: 'Sky', value: 'oklch(0.42 0.07 230)' },
+  { label: 'Lilac', value: 'oklch(0.45 0.08 310)' }
+]
+
+const HIGHLIGHT_COLORS = [
+  { label: 'None', value: '' },
+  { label: 'Rose', value: 'oklch(0.93 0.035 12)' },
+  { label: 'Amber', value: 'oklch(0.95 0.045 90)' },
+  { label: 'Sage', value: 'oklch(0.94 0.03 140)' },
+  { label: 'Sky', value: 'oklch(0.94 0.03 230)' },
+  { label: 'Lilac', value: 'oklch(0.94 0.03 310)' }
+]
+
+const TextColor = Mark.create({
+  name: 'textColor',
+  addAttributes() {
+    return {
+      color: { default: null }
+    }
+  },
+  parseHTML() {
+    return [
+      {
+        style: 'color',
+        getAttrs: (value) => (typeof value === 'string' && value ? { color: value } : false)
+      }
+    ]
+  },
+  renderHTML({ HTMLAttributes }) {
+    if (!HTMLAttributes.color) return ['span', 0]
+    return ['span', mergeAttributes({ style: `color: ${HTMLAttributes.color}` }), 0]
+  }
+})
+
+const UnderlineMark = Mark.create({
+  name: 'underline',
+  parseHTML() {
+    return [{ tag: 'u' }, { style: 'text-decoration', getAttrs: (value) => value === 'underline' && null }]
+  },
+  renderHTML() {
+    return ['u', 0]
+  }
+})
+
+const HighlightColor = Mark.create({
+  name: 'highlightColor',
+  addAttributes() {
+    return {
+      color: { default: null }
+    }
+  },
+  parseHTML() {
+    return [
+      {
+        style: 'background-color',
+        getAttrs: (value) => (typeof value === 'string' && value ? { color: value } : false)
+      }
+    ]
+  },
+  renderHTML({ HTMLAttributes }) {
+    if (!HTMLAttributes.color) return ['span', 0]
+    return ['span', mergeAttributes({ style: `background-color: ${HTMLAttributes.color}` }), 0]
+  }
+})
+
 const slashItems: SlashItem[] = [
   {
     title: 'Text',
-    hint: 'Plain paragraph',
+    group: 'Text',
     aliases: ['text', 'p'],
     run: (editor) => editor.chain().focus().setParagraph().run()
   },
   {
     title: 'Heading 1',
-    hint: 'Large title',
+    group: 'Text',
     aliases: ['h1', 'heading'],
     run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run()
   },
   {
     title: 'Heading 2',
-    hint: 'Section heading',
+    group: 'Text',
     aliases: ['h2'],
     run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run()
   },
   {
     title: 'Heading 3',
-    hint: 'Subheading',
+    group: 'Text',
     aliases: ['h3'],
     run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run()
   },
   {
     title: 'Bullet list',
-    hint: 'Unordered list',
+    group: 'Text',
     aliases: ['ul', 'list', 'bullet'],
     run: (editor) => editor.chain().focus().toggleBulletList().run()
   },
   {
     title: 'Numbered list',
-    hint: 'Ordered list',
+    group: 'Text',
     aliases: ['ol', 'number'],
     run: (editor) => editor.chain().focus().toggleOrderedList().run()
   },
   {
     title: 'Quote',
-    hint: 'Callout block',
+    group: 'Text',
     aliases: ['quote', 'blockquote'],
     run: (editor) => editor.chain().focus().toggleBlockquote().run()
   },
   {
     title: 'Divider',
-    hint: 'Horizontal rule',
+    group: 'Text',
     aliases: ['hr', 'div', 'divider'],
     run: (editor) => editor.chain().focus().setHorizontalRule().run()
   },
   {
     title: 'Runnable script',
-    hint: 'JS or TS you can run here',
-    aliases: ['run', 'js', 'ts', 'script', 'code'],
+    group: 'Paper',
+    aliases: ['run', 'js', 'ts', 'inline'],
     icon: <FileCode2 className="size-3.5" />,
     run: (editor) =>
       editor
@@ -98,28 +179,35 @@ const slashItems: SlashItem[] = [
         .run()
   },
   {
+    title: 'Run a page',
+    group: 'Paper',
+    aliases: ['play', 'remote', 'script'],
+    icon: <FileCode2 className="size-3.5" />,
+    run: (editor) => editor.chain().focus().insertContent({ type: 'scriptRun' }).run()
+  },
+  {
     title: 'Plain code',
-    hint: 'Fenced, not runnable',
-    aliases: ['pre', 'fence'],
+    group: 'Paper',
+    aliases: ['pre', 'fence', 'code'],
     run: (editor) => editor.chain().focus().toggleCodeBlock().run()
   },
   {
     title: 'CSV preview',
-    hint: 'Show a table from this space',
+    group: 'Paper',
     aliases: ['csv', 'table', 'data'],
     icon: <FileSpreadsheet className="size-3.5" />,
     run: (editor) => editor.chain().focus().insertContent({ type: 'csvEmbed' }).run()
   },
   {
     title: 'Chart',
-    hint: 'Graph a CSV from this space',
+    group: 'Paper',
     aliases: ['chart', 'graph', 'plot', 'viz'],
     icon: <ChartColumn className="size-3.5" />,
     run: (editor) => editor.chain().focus().insertContent({ type: 'chartEmbed' }).run()
   },
   {
     title: 'Page link',
-    hint: 'Link to a page, script, or table',
+    group: 'Paper',
     aliases: ['link', 'page', 'ref'],
     icon: <Link2 className="size-3.5" />,
     run: (editor) => editor.chain().focus().insertContent({ type: 'pageLink' }).run()
@@ -170,7 +258,8 @@ export function MarkdownEditor({
   pageId,
   spaceId,
   readOnly = false,
-  active = true
+  active = true,
+  spellcheck = true
 }: {
   content: string
   onChange: (value: string) => void
@@ -181,8 +270,17 @@ export function MarkdownEditor({
   spaceId?: string
   readOnly?: boolean
   active?: boolean
+  spellcheck?: boolean
 }): React.JSX.Element {
   const { trees } = useWorkspace()
+  const [spell, setSpell] = useState<{ misspelledWord: string; suggestions: string[] }>({
+    misspelledWord: '',
+    suggestions: []
+  })
+
+  useEffect(() => {
+    return window.api?.onSpellContext?.((payload) => setSpell(payload))
+  }, [])
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [findIndex, setFindIndex] = useState(0)
@@ -211,7 +309,11 @@ export function MarkdownEditor({
           RunnableCode,
           CsvEmbed,
           ChartEmbed,
-          PageLink
+          PageLink,
+          ScriptRun,
+          TextColor,
+          HighlightColor,
+          UnderlineMark
         ],
     content: parseDoc(content),
     editable: !readOnly,
@@ -267,14 +369,18 @@ export function MarkdownEditor({
     const q = menu.query.toLowerCase()
     const items = compact
       ? slashItems.filter(
-          (item) => !item.aliases.some((alias) => ['run', 'csv', 'chart', 'link'].includes(alias))
+          (item) =>
+            !item.aliases.some((alias) =>
+              ['run', 'csv', 'chart', 'link', 'play', 'remote', 'script'].includes(alias)
+            )
         )
       : slashItems
     return items.filter(
       (item) =>
         !q ||
         item.title.toLowerCase().includes(q) ||
-        item.aliases.some((alias) => alias.startsWith(q))
+        item.aliases.some((alias) => alias.startsWith(q)) ||
+        item.group.toLowerCase().startsWith(q)
     )
   }, [compact, menu])
 
@@ -357,11 +463,21 @@ export function MarkdownEditor({
         event.preventDefault()
         event.stopPropagation()
         setFindOpen(true)
+        return
+      }
+      if (event.key.toLowerCase() === 'd' && editor && !readOnly) {
+        event.preventDefault()
+        event.stopPropagation()
+        const { $from } = editor.state.selection
+        const node = $from.node(1)
+        if (!node) return
+        const pos = $from.after(1)
+        editor.commands.insertContentAt(pos, node.toJSON())
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [active, compact])
+  }, [active, compact, editor, readOnly])
 
   useEffect(() => {
     if (!editor) return
@@ -458,34 +574,200 @@ export function MarkdownEditor({
           </Button>
         </div>
       ) : null}
-      <EditorContent editor={editor} />
+      {compact ? (
+        <div spellCheck={spellcheck}>
+          <EditorContent editor={editor} />
+        </div>
+      ) : (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div spellCheck={spellcheck}>
+            <EditorContent editor={editor} />
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-auto min-w-0 p-1.5">
+          {spell.suggestions.length > 0 || spell.misspelledWord ? (
+            <>
+              {spell.suggestions.map((word) => (
+                <ContextMenuItem
+                  key={word}
+                  onSelect={() => {
+                    document.execCommand('insertText', false, word)
+                  }}
+                >
+                  {word}
+                </ContextMenuItem>
+              ))}
+              {spell.misspelledWord ? (
+                <ContextMenuItem
+                  onSelect={() => void api.app.addToDictionary({ word: spell.misspelledWord })}
+                >
+                  Add to dictionary
+                </ContextMenuItem>
+              ) : null}
+              <ContextMenuSeparator />
+            </>
+          ) : null}
+          <div className="flex items-center gap-0.5">
+            <ContextMenuItem
+              disabled={readOnly}
+              className={cn(
+                'size-8 justify-center p-0 font-serif text-[15px] font-bold',
+                editor?.isActive('bold') && 'bg-accent'
+              )}
+              onSelect={() => editor?.chain().focus().toggleBold().run()}
+            >
+              B
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={readOnly}
+              className={cn(
+                'size-8 justify-center p-0 font-serif text-[15px] italic',
+                editor?.isActive('italic') && 'bg-accent'
+              )}
+              onSelect={() => editor?.chain().focus().toggleItalic().run()}
+            >
+              I
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={readOnly}
+              className={cn(
+                'size-8 justify-center p-0 font-serif text-[15px] underline decoration-[1.5px] underline-offset-2',
+                editor?.isActive('underline') && 'bg-accent'
+              )}
+              onSelect={() => editor?.chain().focus().toggleMark('underline').run()}
+            >
+              U
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={readOnly}
+              className={cn(
+                'size-8 justify-center p-0 font-serif text-[15px] line-through',
+                editor?.isActive('strike') && 'bg-accent'
+              )}
+              onSelect={() => editor?.chain().focus().toggleStrike().run()}
+            >
+              S
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={readOnly}
+              className={cn(
+                'size-8 justify-center p-0 font-mono text-[13px]',
+                editor?.isActive('code') && 'bg-accent'
+              )}
+              onSelect={() => editor?.chain().focus().toggleCode().run()}
+            >
+              {'</>'}
+            </ContextMenuItem>
+          </div>
+          <div className="mt-1 flex items-center justify-between">
+            {TEXT_COLORS.map((item) => (
+              <ContextMenuItem
+                key={`fg-${item.label}`}
+                disabled={readOnly}
+                title={item.label}
+                className="size-6 justify-center rounded-md p-0"
+                onSelect={() => {
+                  if (!editor) return
+                  if (!item.value) editor.chain().focus().unsetMark('textColor').run()
+                  else editor.chain().focus().setMark('textColor', { color: item.value }).run()
+                }}
+              >
+                <span
+                  className="flex size-4 items-center justify-center rounded-full text-[10px] font-semibold"
+                  style={{
+                    color: item.value || 'var(--foreground)',
+                    boxShadow: 'inset 0 0 0 1px color-mix(in oklab, var(--foreground) 18%, transparent)'
+                  }}
+                >
+                  A
+                </span>
+              </ContextMenuItem>
+            ))}
+          </div>
+          <div className="mt-0.5 flex items-center justify-between">
+            {HIGHLIGHT_COLORS.map((item) => (
+              <ContextMenuItem
+                key={`bg-${item.label}`}
+                disabled={readOnly}
+                title={item.label}
+                className="size-6 justify-center rounded-md p-0"
+                onSelect={() => {
+                  if (!editor) return
+                  if (!item.value) editor.chain().focus().unsetMark('highlightColor').run()
+                  else editor.chain().focus().setMark('highlightColor', { color: item.value }).run()
+                }}
+              >
+                <span
+                  className="size-4 rounded-sm"
+                  style={{
+                    background: item.value || 'transparent',
+                    boxShadow: 'inset 0 0 0 1px color-mix(in oklab, var(--foreground) 18%, transparent)'
+                  }}
+                />
+              </ContextMenuItem>
+            ))}
+          </div>
+          <ContextMenuSeparator className="-mx-1.5 my-1.5" />
+          <div className="flex items-center">
+            <ContextMenuItem
+              className="h-7 flex-1 justify-center px-0"
+              onSelect={() => document.execCommand('copy')}
+            >
+              Copy
+            </ContextMenuItem>
+            <ContextMenuItem
+              className="h-7 flex-1 justify-center px-0"
+              disabled={readOnly}
+              onSelect={() => document.execCommand('cut')}
+            >
+              Cut
+            </ContextMenuItem>
+            <ContextMenuItem
+              className="h-7 flex-1 justify-center px-0"
+              disabled={readOnly}
+              onSelect={() => document.execCommand('paste')}
+            >
+              Paste
+            </ContextMenuItem>
+          </div>
+        </ContextMenuContent>
+      </ContextMenu>
+      )}
       {!readOnly && menu && menu.kind === 'slash' && slashMatches.length > 0 ? (
         <div
-          className="absolute z-20 w-64 overflow-hidden rounded-lg border bg-popover py-1 shadow-md"
+          className="absolute z-20 max-h-64 w-56 overflow-y-auto rounded-lg border bg-popover py-1 shadow-md"
           style={{ top: menu.top, left: menu.left }}
+          onWheel={(event) => event.stopPropagation()}
         >
-          {slashMatches.map((item, index) => (
-            <button
-              key={item.title}
-              type="button"
-              className={cn(
-                'flex w-full items-start gap-2 px-3 py-1.5 text-left',
-                index === menu.index ? 'bg-accent' : 'hover:bg-accent/70'
-              )}
-              onMouseDown={(event) => {
-                event.preventDefault()
-                applySlash(item)
-              }}
-            >
-              <span className="mt-0.5 text-muted-foreground">
-                {item.icon ?? <FileText className="size-3.5" />}
-              </span>
-              <span>
-                <span className="block text-sm font-medium">{item.title}</span>
-                <span className="block text-xs text-muted-foreground">{item.hint}</span>
-              </span>
-            </button>
-          ))}
+          {slashMatches.map((item, index) => {
+            const prev = slashMatches[index - 1]
+            return (
+              <div key={item.title}>
+                {item.group !== prev?.group ? (
+                  <p className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+                    {item.group}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm',
+                    index === menu.index ? 'bg-accent' : 'hover:bg-accent/70'
+                  )}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    applySlash(item)
+                  }}
+                >
+                  <span className="text-muted-foreground">
+                    {item.icon ?? <FileText className="size-3.5" />}
+                  </span>
+                  {item.title}
+                </button>
+              </div>
+            )
+          })}
         </div>
       ) : null}
       {!readOnly && menu && menu.kind === 'wiki' ? (

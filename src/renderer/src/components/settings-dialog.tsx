@@ -11,6 +11,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { api } from '@/lib/rpc'
+import { useWorkspace } from '@/lib/workspace'
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string; hint: string }> = [
   { id: 'system', label: 'System', hint: 'Follow the computer' },
@@ -27,6 +28,7 @@ export function SettingsDialog({
 }): React.JSX.Element {
   const { preference, setPreference } = useTheme()
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const { exportBackup, importBackup } = useWorkspace()
 
   useEffect(() => {
     if (!open) return
@@ -78,6 +80,24 @@ export function SettingsDialog({
                 {preference === option.id ? <Check className="size-4" /> : null}
               </Button>
             ))}
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <h3 className="mb-2 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            Data
+          </h3>
+          <p className="mb-3 text-sm text-muted-foreground">
+            A full backup includes every space, folder, page, archive, trash item, and history. It
+            does <span className="text-foreground">not</span> include secret values.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={() => void exportBackup()}>
+              Export everything
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void importBackup()}>
+              Import backup
+            </Button>
           </div>
         </section>
 

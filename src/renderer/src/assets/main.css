@@ -224,7 +224,7 @@
 
 .accent-select ::selection,
 .accent-select *::selection {
-  background: color-mix(in oklab, var(--page-accent) 48%, transparent);
+  background: color-mix(in oklab, var(--page-accent) 28%, transparent);
 }
 
 .accent-select .cm-selectionBackground,
@@ -323,12 +323,27 @@
 
 .tiptap ul,
 .tiptap ol {
-  padding-left: 1.4rem;
+  padding-left: 1.25rem;
   margin: 0.35rem 0;
 }
 
 .tiptap ul {
-  list-style: disc;
+  list-style: none;
+}
+
+.tiptap ul > li {
+  position: relative;
+}
+
+.tiptap ul > li::before {
+  content: '';
+  position: absolute;
+  top: 0.72em;
+  left: -1rem;
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 42%, transparent);
 }
 
 .tiptap ol {
@@ -431,7 +446,7 @@
 .cm-tooltip.cm-completionInfo {
   background: color-mix(in oklab, var(--paper) 92%, white) !important;
   border: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent) !important;
-  border-radius: 0.4rem !important;
+  border-radius: 0.28rem !important;
   box-shadow:
     0 1px 0 color-mix(in oklab, var(--foreground) 4%, transparent),
     0 12px 28px -16px color-mix(in oklab, var(--foreground) 28%, transparent);
@@ -449,11 +464,12 @@
 .cm-tooltip.cm-tooltip-autocomplete > ul {
   font-family: var(--font-mono);
   max-height: 16rem;
+  padding: 6px !important;
 }
 
 .cm-tooltip.cm-tooltip-autocomplete > ul > li {
-  border-radius: 0.25rem;
-  padding: 0.2rem 0.45rem;
+  border-radius: 0.25rem !important;
+  padding: 5px 8px !important;
 }
 
 .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
@@ -471,6 +487,16 @@
   max-width: 16rem;
   line-height: 1.4;
   padding: 0.4rem 0.55rem;
+}
+
+.tiptap ::spelling-error {
+  text-decoration: underline wavy color-mix(in oklab, var(--destructive) 45%, transparent);
+  text-decoration-thickness: 1px;
+}
+
+.cm-lintRange-error {
+  background-image: none;
+  text-decoration: underline wavy color-mix(in oklab, var(--destructive) 50%, transparent);
 }
 
 .cm-panels:has(.cm-search),

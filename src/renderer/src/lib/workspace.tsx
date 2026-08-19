@@ -78,8 +78,22 @@ type WorkspaceContextValue = {
   }) => Promise<void>
   showArchived: boolean
   setShowArchived: (value: boolean) => void
+  showTrash: boolean
+  setShowTrash: (value: boolean) => void
   archivePage: (id: string) => Promise<void>
   unarchivePage: (id: string) => Promise<void>
+  restorePage: (id: string) => Promise<void>
+  purgePage: (id: string) => Promise<void>
+  pinnedTabIds: string[]
+  togglePinTab: (pageId: string) => void
+  exportBackup: () => Promise<void>
+  importBackup: () => Promise<void>
+  flushSave: (id: string) => Promise<void>
+  updatePageFlags: (
+    id: string,
+    flags: { locked?: boolean; spellcheck?: boolean }
+  ) => Promise<void>
+  restorePageVersion: (id: string, versionId: string) => Promise<void>
   changePageType: (id: string, type: PageType) => Promise<void>
   selectFolder: (spaceId: string, folderId: string | null) => void
   createSpace: (name: string) => Promise<void>
@@ -137,6 +151,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const [runningPageIds, setRunningPageIds] = useState<string[]>([])
   const [preserveEditorFocus, setPreserveEditorFocus] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [showTrash, setShowTrash] = useState(false)
+  const [pinnedTabIds, setPinnedTabIds] = useState<string[]>(() => {
+    try {
+      const stored = window.localStorage.getItem('paper.pinnedTabs')
+      return stored ? (JSON.parse(stored) as string[]) : []
+    } catch {
+      return []
+    }
+  })
   const [beside, setBeside] = useState<TabRef | null>(null)
   const [paneFocus, setPaneFocus] = useState<'main' | 'beside'>('main')
   const selectPageRef = useRef<
@@ -227,7 +250,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const openGuide = useCallback(() => {
     const hostSpace = spaceId ?? spaces[0]?.id
     if (!hostSpace) return
-    void selectPageRef.current(GUIDE_PAGE_ID, hostSpace)
+    void selectPageRef.current(GUIDE_PAGE_ID, hostSpace, { newTab: true })
   }, [spaceId, spaces])
 
   const openRunBlock = useCallback(
@@ -252,6 +275,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         iconColor: 'slate',
         sortOrder: 0,
         archived: false,
+        deletedAt: null,
+        locked: false,
+        spellcheck: false,
         createdAt: '',
         updatedAt: ''
       }
@@ -290,7 +316,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       if (isDeskPageId(id)) return pinDesk(current, nextSpaceId)
       if (current.some((tab) => tab.pageId === id)) return pinDesk(current, nextSpaceId)
       const activeId = pageRef.current?.id
-      const canReplace = Boolean(activeId && !isDeskPageId(activeId) && !newTab)
+      const canReplace = Boolean(
+        activeId &&
+          !isDeskPageId(activeId) &&
+          !newTab &&
+          !pinnedTabIds.includes(activeId)
+      )
       let next: TabRef[]
       if (canReplace && activeId) {
         next = current.map((tab) =>
@@ -305,7 +336,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       }
       return pinDesk(next, nextSpaceId)
     },
-    [dropPages]
+    [dropPages, pinnedTabIds]
   )
 
   const selectPage = useCallback(
@@ -843,6 +874,86 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     [refreshTree, storePage]
   )
 
+  const restorePage = useCallback(
+    async (id: string) => {
+      const updated = await api.pages.restore({ id })
+      storePage(updated)
+      await refreshTree(updated.spaceId)
+    },
+    [refreshTree, storePage]
+  )
+
+  const purgePage = useCallback(
+    async (id: string) => {
+      await api.pages.purge({ id })
+      dropPages([id])
+      setTabs((current) => {
+        const host = spaceId ?? spaces[0]?.id ?? ''
+        const nextTabs = pinDesk(
+          current.filter((tab) => tab.pageId !== id),
+          host
+        )
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
+        return nextTabs
+      })
+      if (pageRef.current?.id === id) openDesk()
+      if (spaceId) await refreshTree(spaceId)
+    },
+    [dropPages, openDesk, refreshTree, spaceId, spaces]
+  )
+
+  const togglePinTab = useCallback((pageId: string) => {
+    if (isDeskPageId(pageId)) return
+    setPinnedTabIds((current) => {
+      const next = current.includes(pageId)
+        ? current.filter((id) => id !== pageId)
+        : [...current, pageId]
+      window.localStorage.setItem('paper.pinnedTabs', JSON.stringify(next))
+      return next
+    })
+  }, [])
+
+  const exportBackup = useCallback(async () => {
+    try {
+      await api.spaces.exportBackup()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to export backup')
+    }
+  }, [])
+
+  const importBackup = useCallback(async () => {
+    try {
+      const count = await api.spaces.importBackup()
+      if (count == null) return
+      await refreshSpaces()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to import backup')
+    }
+  }, [refreshSpaces])
+
+  const flushSave = useCallback(async (id: string) => {
+    const current = pagesByIdRef.current[id]
+    if (!current || isLockedPageId(id)) return
+    await api.pages.snapshot({ id })
+  }, [])
+
+  const updatePageFlags = useCallback(
+    async (id: string, flags: { locked?: boolean; spellcheck?: boolean }) => {
+      if (isLockedPageId(id)) return
+      const updated = await api.pages.update({ id, ...flags })
+      storePage(updated)
+    },
+    [storePage]
+  )
+
+  const restorePageVersion = useCallback(
+    async (id: string, versionId: string) => {
+      const updated = await api.pages.restoreVersion({ id, versionId })
+      storePage(updated)
+    },
+    [storePage]
+  )
+
   const changePageType = useCallback(
     async (id: string, type: PageType) => {
       if (isLockedPageId(id)) return
@@ -989,6 +1100,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       moveFolder,
       showArchived,
       setShowArchived,
+      showTrash,
+      setShowTrash,
+      restorePage,
+      purgePage,
+      pinnedTabIds,
+      togglePinTab,
+      exportBackup,
+      importBackup,
+      flushSave,
+      updatePageFlags,
+      restorePageVersion,
       archivePage,
       unarchivePage,
       changePageType,
@@ -1033,7 +1155,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       duplicatePage,
       duplicateSpace,
       error,
+      exportBackup,
       exportSpace,
+      flushSave,
+      updatePageFlags,
+      restorePageVersion,
+      importBackup,
       importCsv,
       importSpace,
       moveFolder,
@@ -1070,6 +1197,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setPageRunning,
       showArchived,
       setShowArchived,
+      showTrash,
+      setShowTrash,
+      restorePage,
+      purgePage,
+      pinnedTabIds,
+      togglePinTab,
       unarchivePage
     ]
   )

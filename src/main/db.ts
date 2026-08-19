@@ -97,7 +97,18 @@ function applyMigrations(databasePath: string): void {
     const sqlPath = join(migrationsDir, id, 'migration.sql')
     if (!existsSync(sqlPath)) continue
 
-    db.exec(readFileSync(sqlPath, 'utf8'))
+    const statements = readFileSync(sqlPath, 'utf8')
+      .split(';')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0 && !part.startsWith('--'))
+    for (const statement of statements) {
+      try {
+        db.exec(statement)
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        if (!/duplicate column name|already exists/i.test(message)) throw cause
+      }
+    }
     db.prepare('INSERT INTO _migrations (id) VALUES (?)').run(id)
   }
 

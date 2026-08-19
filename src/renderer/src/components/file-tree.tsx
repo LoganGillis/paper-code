@@ -73,9 +73,13 @@ function PageRow({
     updatePageAppearance,
     duplicatePage,
     openBeside,
-    movePage
+    movePage,
+    restorePage,
+    purgePage,
+    showTrash
   } = useWorkspace()
   const active = selected?.id === page.id
+  const [dropEdge, setDropEdge] = useState<'before' | 'after' | null>(null)
 
   return (
     <ContextMenu>
@@ -88,29 +92,54 @@ function PageRow({
               JSON.stringify({ kind: 'page', id: page.id, spaceId })
             )
             event.dataTransfer.effectAllowed = 'move'
+            const ghost = event.currentTarget.cloneNode(true) as HTMLElement
+            ghost.style.position = 'absolute'
+            ghost.style.top = '-9999px'
+            ghost.style.width = `${event.currentTarget.offsetWidth}px`
+            ghost.style.opacity = '0.92'
+            ghost.style.background = 'var(--paper)'
+            document.body.appendChild(ghost)
+            event.dataTransfer.setDragImage(ghost, 16, 16)
+            requestAnimationFrame(() => ghost.remove())
+            event.currentTarget.classList.add('opacity-40')
+          }}
+          onDragEnd={(event) => {
+            event.currentTarget.classList.remove('opacity-40')
+            setDropEdge(null)
           }}
           onDragOver={(event) => {
             event.preventDefault()
             event.dataTransfer.dropEffect = 'move'
+            const rect = event.currentTarget.getBoundingClientRect()
+            setDropEdge(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
           }}
+          onDragLeave={() => setDropEdge(null)}
           onDrop={(event) => {
             event.preventDefault()
             event.stopPropagation()
+            const edge = dropEdge
+            setDropEdge(null)
             try {
               const payload = JSON.parse(event.dataTransfer.getData('application/x-paper')) as {
                 kind: string
                 id: string
               }
               if (payload.kind === 'page' && payload.id !== page.id) {
-                void movePage({ id: payload.id, folderId: page.folderId, beforeId: page.id })
+                void movePage({
+                  id: payload.id,
+                  folderId: page.folderId,
+                  beforeId: edge === 'after' ? null : page.id
+                })
               }
             } catch {
               // ignore
             }
           }}
           className={cn(
-            'group flex h-8 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
-            active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70'
+            'group relative flex h-8 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
+            active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70',
+            dropEdge === 'before' && 'before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-foreground/50 before:content-[""]',
+            dropEdge === 'after' && 'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground/50 after:content-[""]'
           )}
           style={{ paddingLeft: 10 + depth * 12 }}
         >
@@ -152,9 +181,12 @@ function PageRow({
                 onCopy={() => {
                   void api.pages.get({ id: page.id }).then((full) => copyText(full.content))
                 }}
-                onArchive={page.archived ? undefined : () => void archivePage(page.id)}
-                onUnarchive={page.archived ? () => void unarchivePage(page.id) : undefined}
-                onDelete={() => void deletePage(page.id)}
+                onArchive={
+                  page.archived || page.deletedAt ? undefined : () => void archivePage(page.id)
+                }
+                onUnarchive={page.archived && !page.deletedAt ? () => void unarchivePage(page.id) : undefined}
+                onRestore={page.deletedAt ? () => void restorePage(page.id) : undefined}
+                onDelete={() => (showTrash ? void purgePage(page.id) : void deletePage(page.id))}
               />
             </div>
           </div>
@@ -191,17 +223,19 @@ function PageRow({
           Copy
         </ContextMenuItem>
         <ContextMenuSeparator />
-        {page.archived ? (
+        {page.deletedAt ? (
+          <ContextMenuItem onSelect={() => void restorePage(page.id)}>Restore</ContextMenuItem>
+        ) : page.archived ? (
           <ContextMenuItem onSelect={() => void unarchivePage(page.id)}>Unarchive</ContextMenuItem>
         ) : (
           <ContextMenuItem onSelect={() => void archivePage(page.id)}>Archive</ContextMenuItem>
         )}
         <ContextMenuItem
           className="text-destructive focus:text-destructive"
-          onSelect={() => void deletePage(page.id)}
+          onSelect={() => (showTrash ? void purgePage(page.id) : void deletePage(page.id))}
         >
           <Trash2 className="size-3.5" />
-          Delete
+          {showTrash ? 'Delete forever' : 'Move to trash'}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -347,14 +381,33 @@ function FolderRow({
 }
 
 export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element {
-  const { showArchived } = useWorkspace()
+  const { showArchived, showTrash } = useWorkspace()
   const archived = tree.archivedPages ?? []
+  const trashed = tree.trashedPages ?? []
+
+  if (showTrash) {
+    return (
+      <div className="flex min-h-[8rem] flex-col pb-2">
+        {trashed.length === 0 ? (
+          <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
+            Nothing in the trash.
+          </p>
+        ) : (
+          trashed.map((page) => (
+            <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
+          ))
+        )}
+      </div>
+    )
+  }
 
   if (showArchived) {
     return (
-      <div className="pb-2">
+      <div className="flex min-h-[8rem] flex-col pb-2">
         {archived.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-muted-foreground">Nothing archived here.</p>
+          <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
+            Nothing archived here.
+          </p>
         ) : (
           archived.map((page) => (
             <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
@@ -364,14 +417,23 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
     )
   }
 
+  const empty = tree.folders.length === 0 && tree.pages.length === 0
   return (
-    <div className="pb-2">
-      {tree.folders.map((folder) => (
-        <FolderRow key={folder.id} folder={folder} spaceId={tree.space.id} depth={0} />
-      ))}
-      {tree.pages.map((page) => (
-        <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
-      ))}
+    <div className="flex min-h-[8rem] flex-col pb-2">
+      {empty ? (
+        <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
+          Create a page to get started.
+        </p>
+      ) : (
+        <>
+          {tree.folders.map((folder) => (
+            <FolderRow key={folder.id} folder={folder} spaceId={tree.space.id} depth={0} />
+          ))}
+          {tree.pages.map((page) => (
+            <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
+          ))}
+        </>
+      )}
     </div>
   )
 }

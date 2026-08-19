@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { transform } from 'sucrase'
 import CodeMirror from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { EditorView, keymap } from '@codemirror/view'
@@ -14,15 +15,22 @@ import { FindBar } from '@/components/find-bar'
 import { useTheme } from '@/components/theme-provider'
 import { cn } from '@/lib/utils'
 
-function paperHighlight(dark: boolean): HighlightStyle {
+function mix(accent: string, into: string, amount: number): string {
+  return `color-mix(in oklab, ${accent} ${amount}%, ${into})`
+}
+
+function paperHighlight(dark: boolean, accent: string): HighlightStyle {
+  const ink = dark ? '#ece4d6' : '#32281f'
+  const keyword = dark ? mix(accent, ink, 42) : accent
+  const fn = dark ? mix(accent, '#c9b08b', 32) : mix(accent, '#5c4630', 55)
   return HighlightStyle.define([
     { tag: tags.comment, color: dark ? '#9a8f7c' : '#8a7d6b', fontStyle: 'italic' },
-    { tag: tags.keyword, color: dark ? '#d4a27f' : '#8b4d2a' },
+    { tag: tags.keyword, color: keyword },
     { tag: tags.string, color: dark ? '#b7c99a' : '#4d6b3c' },
     { tag: tags.number, color: dark ? '#d7b46a' : '#8a5a18' },
-    { tag: tags.function(tags.variableName), color: dark ? '#c9b08b' : '#5c4630' },
+    { tag: tags.function(tags.variableName), color: fn },
     { tag: tags.typeName, color: dark ? '#c4a882' : '#6b5340' },
-    { tag: tags.bool, color: dark ? '#d4a27f' : '#8b4d2a' },
+    { tag: tags.bool, color: keyword },
     { tag: tags.operator, color: dark ? '#c4b8a8' : '#5c5248' },
     { tag: tags.definition(tags.variableName), color: dark ? '#e6dcc8' : '#3a2f26' }
   ])
@@ -45,14 +53,16 @@ const runKeymap = Prec.highest(
 )
 
 function paperTheme(dark: boolean, accent: string): ReturnType<typeof EditorView.theme> {
-  const selection = `color-mix(in oklab, ${accent} ${dark ? 52 : 44}%, transparent)`
+  const ink = dark ? '#ece4d6' : '#32281f'
+  const selection = mix(accent, 'transparent', dark ? 32 : 26)
+  const caret = dark ? mix(accent, ink, 50) : accent
   return EditorView.theme(
     {
       '&': {
         height: '100%',
         overflow: 'hidden',
         backgroundColor: 'transparent',
-        color: dark ? '#ece4d6' : '#32281f',
+        color: ink,
         fontSize: '12.5px'
       },
       '.cm-scroller': {
@@ -60,7 +70,7 @@ function paperTheme(dark: boolean, accent: string): ReturnType<typeof EditorView
       },
       '.cm-content': {
         fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-        caretColor: dark ? '#ece4d6' : '#32281f',
+        caretColor: caret,
         padding: '4px 0 32px 6px'
       },
       '.cm-gutters': {
@@ -74,10 +84,11 @@ function paperTheme(dark: boolean, accent: string): ReturnType<typeof EditorView
         paddingRight: '4px'
       },
       '.cm-activeLine': {
-        backgroundColor: dark ? 'rgba(255,248,236,0.04)' : 'rgba(50,40,30,0.035)'
+        backgroundColor: mix(accent, 'transparent', dark ? 10 : 7)
       },
       '.cm-activeLineGutter': {
-        backgroundColor: 'transparent'
+        backgroundColor: 'transparent',
+        color: caret
       },
       '.cm-selectionBackground': {
         backgroundColor: selection
@@ -89,13 +100,16 @@ function paperTheme(dark: boolean, accent: string): ReturnType<typeof EditorView
         backgroundColor: selection
       },
       '.cm-cursor': {
-        borderLeftColor: dark ? '#ece4d6' : '#32281f'
+        borderLeftColor: caret
       },
       '.cm-searchMatch': {
-        backgroundColor: dark ? 'rgba(215,180,106,0.35)' : 'rgba(212,168,80,0.35)'
+        backgroundColor: mix(accent, 'transparent', dark ? 28 : 22)
       },
       '.cm-searchMatch-selected': {
-        backgroundColor: dark ? 'rgba(212,162,127,0.55)' : 'rgba(180,120,50,0.4)'
+        backgroundColor: mix(accent, 'transparent', dark ? 44 : 34)
+      },
+      '.cm-tooltip-autocomplete': {
+        borderRadius: '4px'
       }
     },
     { dark }
@@ -141,6 +155,16 @@ export function CodeEditor({
     return [...new Set(titles)].sort((a, b) => a.localeCompare(b))
   }, [trees])
   const [view, setView] = useState<EditorView | null>(null)
+  const syntaxError = useMemo(() => {
+    try {
+      transform(value, {
+        transforms: language === 'typescript' ? ['typescript', 'imports'] : ['imports']
+      })
+      return null
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : 'Syntax error'
+    }
+  }, [language, value])
   const [findOpen, setFindOpen] = useState(false)
   const [replaceMode, setReplaceMode] = useState(false)
   const [query, setQuery] = useState('')
@@ -166,7 +190,7 @@ export function CodeEditor({
         })
       }),
       paperTheme(dark, ICON_ACCENT[accent]),
-      syntaxHighlighting(paperHighlight(dark))
+      syntaxHighlighting(paperHighlight(dark, ICON_ACCENT[accent]))
     ],
     [accent, csvTitles, dark, language]
   )
@@ -220,6 +244,11 @@ export function CodeEditor({
           onReplaceMode={setReplaceMode}
         />
       )}
+      {syntaxError && !compact ? (
+        <p className="absolute bottom-2 left-2 z-10 max-w-[min(36rem,calc(100%-1rem))] rounded-sm bg-paper/90 px-2 py-1 font-mono text-[11px] text-destructive/80">
+          {syntaxError}
+        </p>
+      ) : null}
       <CodeMirror
         value={value}
         height={compact ? 'auto' : '100%'}

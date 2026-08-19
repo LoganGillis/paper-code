@@ -1,7 +1,7 @@
 {
   "name": "paper",
   "productName": "Paper",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A notebook for notes, tables, and scripts.",
   "main": "./out/main/index.js",
   "author": "Logan Gillis",

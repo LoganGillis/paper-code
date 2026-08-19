@@ -43,23 +43,60 @@ model Folder {
 
 /// A markdown note or a JS/TS snippet.
 model Page {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   type        String
-  content     String   @default("")
-  description String   @default("")
-  icon        String   @default("FileText")
-  iconColor   String   @default("slate")
-  sortOrder   Int      @default(0)
-  archived    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  content     String    @default("")
+  description String    @default("")
+  icon        String    @default("FileText")
+  iconColor   String    @default("slate")
+  sortOrder   Int       @default(0)
+  archived    Boolean   @default(false)
+  deletedAt   DateTime?
+  locked      Boolean   @default(false)
+  spellcheck  Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   spaceId String
   space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
 
   folderId String?
   folder   Folder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  versions PageVersion[]
+  runs     RunRecord[]
+}
+
+/// Autosave / manual-save snapshots for version history.
+model PageVersion {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+
+  pageId String
+  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+}
+
+/// Past runs of a script page.
+model RunRecord {
+  id        String   @id @default(cuid())
+  language  String
+  source    String
+  logs      String   @default("[]")
+  result    String?
+  error     String?
+  inputs    String   @default("{}")
+  createdAt DateTime @default(now())
+
+  pageId String
+  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
 }
 
 /// Encrypted secrets scoped to a space. Values are sealed with OS keychain storage.

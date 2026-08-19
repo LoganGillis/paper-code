@@ -7,7 +7,7 @@ import { getDatabasePath, getPrisma } from './db'
 import { didSeedThisLaunch } from './seed'
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updates'
 import { executeSnippet } from './runner'
-import { exportSpace, importSpace } from './transfer'
+import { exportBackup, exportSpace, importBackup, importSpace } from './transfer'
 import { isSecretEncryptionAvailable, sealSecret, unsealSecret } from './secrets'
 import {
   defaultColorForPage,
@@ -23,6 +23,8 @@ import type {
   Page,
   PageSummary,
   PageType,
+  PageVersion,
+  RunRecord,
   Space,
   SpaceTree
 } from '../shared/api'
@@ -60,6 +62,9 @@ function serializePageSummary(page: {
   folderId: string | null
   sortOrder: number
   archived?: boolean
+  deletedAt?: Date | null
+  locked?: boolean
+  spellcheck?: boolean
   icon: string
   iconColor: string
   updatedAt: Date
@@ -72,6 +77,9 @@ function serializePageSummary(page: {
     folderId: page.folderId,
     sortOrder: page.sortOrder,
     archived: Boolean(page.archived),
+    deletedAt: page.deletedAt ? page.deletedAt.toISOString() : null,
+    locked: Boolean(page.locked),
+    spellcheck: page.spellcheck !== false,
     icon: normalizeIcon(page.icon, defaultIconForPage(type)),
     iconColor: normalizeColor(page.iconColor, defaultColorForPage(type)),
     updatedAt: page.updatedAt.toISOString()
@@ -87,6 +95,10 @@ function serializePage(page: {
   folderId: string | null
   spaceId: string
   sortOrder: number
+  archived?: boolean
+  deletedAt?: Date | null
+  locked?: boolean
+  spellcheck?: boolean
   icon: string
   iconColor: string
   createdAt: Date
@@ -133,8 +145,9 @@ async function buildTree(spaceId: string): Promise<SpaceTree> {
     where: { spaceId },
     orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }]
   })
-  const live = pages.filter((page) => !page.archived)
-  const archived = pages.filter((page) => page.archived)
+  const live = pages.filter((page) => !page.archived && !page.deletedAt)
+  const archived = pages.filter((page) => page.archived && !page.deletedAt)
+  const trashed = pages.filter((page) => Boolean(page.deletedAt))
 
   const folderNodes = new Map<string, FolderNode>()
   for (const folder of folders) {
@@ -162,7 +175,8 @@ async function buildTree(spaceId: string): Promise<SpaceTree> {
     space: serializeSpace(space),
     folders: roots,
     pages: live.filter((page) => !page.folderId).map(serializePageSummary),
-    archivedPages: archived.map(serializePageSummary)
+    archivedPages: archived.map(serializePageSummary),
+    trashedPages: trashed.map(serializePageSummary)
   }
 }
 
@@ -238,6 +252,97 @@ function serializeSecret(secret: { id: string; key: string; spaceId: string; upd
   }
 }
 
+function serializeVersion(row: {
+  id: string
+  pageId: string
+  title: string
+  content: string
+  description: string
+  createdAt: Date
+}): PageVersion {
+  return {
+    id: row.id,
+    pageId: row.pageId,
+    title: row.title,
+    content: row.content,
+    description: row.description,
+    createdAt: row.createdAt.toISOString()
+  }
+}
+
+function serializeRun(row: {
+  id: string
+  pageId: string
+  language: string
+  source: string
+  logs: string
+  result: string | null
+  error: string | null
+  inputs: string
+  createdAt: Date
+}): RunRecord {
+  let logs: RunRecord['logs'] = []
+  try {
+    logs = JSON.parse(row.logs) as RunRecord['logs']
+  } catch {
+    logs = []
+  }
+  return {
+    id: row.id,
+    pageId: row.pageId,
+    language: row.language === 'typescript' ? 'typescript' : 'javascript',
+    source: row.source,
+    logs,
+    result: row.result ?? undefined,
+    error: row.error ?? undefined,
+    inputs: row.inputs,
+    createdAt: row.createdAt.toISOString()
+  }
+}
+
+async function snapshotPage(
+  page: { id: string; title: string; content: string; description: string },
+  force = false
+): Promise<{
+  id: string
+  pageId: string
+  title: string
+  content: string
+  description: string
+  createdAt: Date
+}> {
+  const prisma = getPrisma()
+  const last = await prisma.pageVersion.findFirst({
+    where: { pageId: page.id },
+    orderBy: { createdAt: 'desc' }
+  })
+  if (
+    !force &&
+    last &&
+    last.content === page.content &&
+    last.title === page.title &&
+    last.description === page.description
+  ) {
+    return last
+  }
+  if (
+    !force &&
+    last &&
+    Date.now() - last.createdAt.getTime() < 20_000 &&
+    last.content === page.content
+  ) {
+    return last
+  }
+  return prisma.pageVersion.create({
+    data: {
+      pageId: page.id,
+      title: page.title,
+      content: page.content,
+      description: page.description
+    }
+  })
+}
+
 async function loadSecretsForRun(spaceId: string): Promise<Record<string, string>> {
   const spaces = await getPrisma().space.findMany({ include: { secrets: true } })
   const bag: Record<string, string> = {}
@@ -259,13 +364,17 @@ async function loadSecretsForRun(spaceId: string): Promise<Record<string, string
 
 export const procedures: AppApi = {
   app: {
-    getConfig: async () => ({
-      name: app.getName(),
-      version: app.getVersion(),
-      isDev: is.dev,
-      databasePath: is.dev ? 'prisma/dev.db' : getDatabasePath(),
-      seededThisLaunch: didSeedThisLaunch()
-    }),
+    getConfig: async () => {
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      await getPrisma().page.deleteMany({ where: { deletedAt: { lt: cutoff } } })
+      return {
+        name: app.getName(),
+        version: app.getVersion(),
+        isDev: is.dev,
+        databasePath: is.dev ? 'prisma/dev.db' : getDatabasePath(),
+        seededThisLaunch: didSeedThisLaunch()
+      }
+    },
     getUpdateStatus: async () => getUpdateStatus(),
     checkForUpdates: async () => {
       checkForUpdates()
@@ -273,6 +382,11 @@ export const procedures: AppApi = {
     },
     quitAndInstall: async () => {
       quitAndInstall()
+    },
+    addToDictionary: async (input) => {
+      const data = z.object({ word: z.string().trim().min(1) }).parse(input)
+      const win = BrowserWindow.getFocusedWindow()
+      win?.webContents.session.addWordToSpellCheckerDictionary(data.word)
     },
     pickCsv: async () => {
       const parent = BrowserWindow.getFocusedWindow()
@@ -429,7 +543,9 @@ export const procedures: AppApi = {
       if (!id) return null
       const space = await getPrisma().space.findUniqueOrThrow({ where: { id } })
       return serializeSpace(space)
-    }
+    },
+    exportBackup: async () => exportBackup(),
+    importBackup: async () => importBackup()
   },
   folders: {
     create: async (input) => {
@@ -593,11 +709,22 @@ export const procedures: AppApi = {
           description: z.string().optional(),
           type: z.enum(pageTypes).optional(),
           archived: z.boolean().optional(),
+          locked: z.boolean().optional(),
+          spellcheck: z.boolean().optional(),
           icon: iconName.optional(),
           iconColor: iconColor.optional()
         })
         .parse(input)
-      const page = await getPrisma().page.update({
+      const prisma = getPrisma()
+      const previous = await prisma.page.findUniqueOrThrow({ where: { id: data.id } })
+      if (
+        data.content !== undefined &&
+        data.content !== previous.content &&
+        !previous.deletedAt
+      ) {
+        await snapshotPage(previous)
+      }
+      const page = await prisma.page.update({
         where: { id: data.id },
         data: {
           ...(data.title !== undefined ? { title: data.title } : {}),
@@ -605,6 +732,8 @@ export const procedures: AppApi = {
           ...(data.description !== undefined ? { description: data.description } : {}),
           ...(data.type !== undefined ? { type: data.type } : {}),
           ...(data.archived !== undefined ? { archived: data.archived } : {}),
+          ...(data.locked !== undefined ? { locked: data.locked } : {}),
+          ...(data.spellcheck !== undefined ? { spellcheck: data.spellcheck } : {}),
           ...(data.icon !== undefined ? { icon: data.icon } : {}),
           ...(data.iconColor !== undefined ? { iconColor: data.iconColor } : {})
         }
@@ -613,7 +742,60 @@ export const procedures: AppApi = {
     },
     delete: async (input) => {
       const data = idInput.parse(input)
+      await getPrisma().page.update({
+        where: { id: data.id },
+        data: { deletedAt: new Date(), archived: false }
+      })
+    },
+    restore: async (input) => {
+      const data = idInput.parse(input)
+      const page = await getPrisma().page.update({
+        where: { id: data.id },
+        data: { deletedAt: null }
+      })
+      return serializePage(page)
+    },
+    purge: async (input) => {
+      const data = idInput.parse(input)
       await getPrisma().page.delete({ where: { id: data.id } })
+    },
+    listVersions: async (input) => {
+      const data = idInput.parse(input)
+      const rows = await getPrisma().pageVersion.findMany({
+        where: { pageId: data.id },
+        orderBy: { createdAt: 'desc' },
+        take: 80
+      })
+      return rows.map(serializeVersion)
+    },
+    snapshot: async (input) => {
+      const data = idInput.parse(input)
+      const page = await getPrisma().page.findUniqueOrThrow({ where: { id: data.id } })
+      return serializeVersion(await snapshotPage(page, true))
+    },
+    restoreVersion: async (input) => {
+      const data = z
+        .object({ id: z.string().min(1), versionId: z.string().min(1) })
+        .parse(input)
+      const prisma = getPrisma()
+      const page = await prisma.page.findUniqueOrThrow({ where: { id: data.id } })
+      const version = await prisma.pageVersion.findUniqueOrThrow({ where: { id: data.versionId } })
+      if (version.pageId !== page.id) throw new Error('Version does not belong to this page.')
+      await snapshotPage(page, true)
+      const updated = await prisma.page.update({
+        where: { id: page.id },
+        data: { title: version.title, content: version.content, description: version.description }
+      })
+      return serializePage(updated)
+    },
+    listRuns: async (input) => {
+      const data = idInput.parse(input)
+      const rows = await getPrisma().runRecord.findMany({
+        where: { pageId: data.id },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      })
+      return rows.map(serializeRun)
     },
     move: async (input) => {
       const data = z
@@ -628,7 +810,7 @@ export const procedures: AppApi = {
       const folderId = data.folderId === undefined ? page.folderId : data.folderId
       await prisma.page.update({ where: { id: page.id }, data: { folderId } })
       const siblings = await prisma.page.findMany({
-        where: { spaceId: page.spaceId, folderId, archived: false },
+        where: { spaceId: page.spaceId, folderId, archived: false, deletedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }]
       })
       const rest = siblings.filter((item) => item.id !== page.id)
@@ -654,8 +836,10 @@ export const procedures: AppApi = {
         })
         .parse(input)
       const [spacePages, allPages, spaces] = await Promise.all([
-        getPrisma().page.findMany({ where: { spaceId: data.spaceId, archived: false } }),
-        getPrisma().page.findMany({ where: { archived: false } }),
+        getPrisma().page.findMany({
+          where: { spaceId: data.spaceId, archived: false, deletedAt: null }
+        }),
+        getPrisma().page.findMany({ where: { archived: false, deletedAt: null } }),
         getPrisma().space.findMany()
       ])
       const page = spacePages.find((item) => item.id === data.pageId)
@@ -676,15 +860,36 @@ export const procedures: AppApi = {
             iconColor: 'slate' as const,
             sortOrder: 0,
             archived: false,
+            deletedAt: null,
+            locked: false,
+            spellcheck: true,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }
-      return executeSnippet(data.language, data.source, {
+      const outcome = await executeSnippet(data.language, data.source, {
         page: current,
         pages: pagesForRun,
         spaces: spaces.map((space) => ({ id: space.id, name: space.name })),
         secrets: await loadSecretsForRun(data.spaceId)
       })
+      if (
+        page &&
+        (page.type === 'javascript' || page.type === 'typescript') &&
+        page.content === data.source
+      ) {
+        await getPrisma().runRecord.create({
+          data: {
+            pageId: page.id,
+            language: data.language,
+            source: data.source,
+            logs: JSON.stringify(outcome.logs),
+            result: outcome.result ?? null,
+            error: outcome.error ?? null,
+            inputs: '{}'
+          }
+        })
+      }
+      return outcome
     }
   },
   secrets: {

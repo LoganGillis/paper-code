@@ -3,14 +3,34 @@ import vm from 'node:vm'
 import { transform } from 'sucrase'
 import { installCsvHelpers, resolvePage, tableFromPage } from '../shared/helpers/csv'
 import { installDateHelpers } from '../shared/helpers/dates'
-import type { Page, RunResult } from '../shared/api'
+import { $Table } from '../shared/helpers/table'
+import type { Page, RunLog, RunResult } from '../shared/api'
 import { installSecretHelpers } from './secrets'
 
 const RUN_TIMEOUT_MS = 8_000
 
+function isTable(value: unknown): value is $Table {
+  return value instanceof $Table
+}
+
+function tableGrid(table: $Table): string[][] {
+  const columns = table.columns
+  return [
+    columns,
+    ...table.rows.map((row) => columns.map((column) => String(row[column] ?? '')))
+  ]
+}
+
 function formatArg(value: unknown): string {
   if (typeof value === 'string') return value
+  if (isTable(value)) return inspect(value.rows, { colors: false, depth: 4, breakLength: 80 })
   return inspect(value, { colors: false, depth: 4, breakLength: 80 })
+}
+
+function logPayload(value: unknown): Pick<RunLog, 'kind' | 'table' | 'object'> {
+  if (isTable(value)) return { kind: 'table', table: tableGrid(value) }
+  if (value && typeof value === 'object') return { kind: 'object', object: value }
+  return { kind: 'text' }
 }
 
 function createLogger(logs: RunResult['logs']): {
@@ -21,7 +41,12 @@ function createLogger(logs: RunResult['logs']): {
 } {
   return {
     log: (...args: unknown[]) => {
-      logs.push({ level: 'log', message: args.map(formatArg).join(' ') })
+      const first = args.length === 1 ? args[0] : undefined
+      logs.push({
+        level: 'log',
+        message: args.map(formatArg).join(' '),
+        ...logPayload(first)
+      })
     },
     info: (...args: unknown[]) => {
       logs.push({ level: 'info', message: args.map(formatArg).join(' ') })
@@ -157,10 +182,24 @@ export async function executeSnippet(
           setTimeout(() => reject(new Error(`Timed out after ${RUN_TIMEOUT_MS}ms`)), RUN_TIMEOUT_MS)
         })
       ])
-      return { logs, result: settled === undefined ? undefined : formatArg(settled) }
+      if (settled === undefined) return { logs }
+      if (isTable(settled)) {
+        return { logs, result: formatArg(settled), resultKind: 'table', resultTable: tableGrid(settled) }
+      }
+      if (settled && typeof settled === 'object') {
+        return { logs, result: formatArg(settled), resultKind: 'object', resultObject: settled }
+      }
+      return { logs, result: formatArg(settled), resultKind: 'text' }
     }
 
-    return { logs, result: value === undefined ? undefined : formatArg(value) }
+    if (value === undefined) return { logs }
+    if (isTable(value)) {
+      return { logs, result: formatArg(value), resultKind: 'table', resultTable: tableGrid(value) }
+    }
+    if (value && typeof value === 'object') {
+      return { logs, result: formatArg(value), resultKind: 'object', resultObject: value }
+    }
+    return { logs, result: formatArg(value), resultKind: 'text' }
   } catch (error) {
     return {
       logs,

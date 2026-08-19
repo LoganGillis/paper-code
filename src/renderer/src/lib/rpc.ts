@@ -18,7 +18,8 @@ export const api: AppApi = {
     pickCsv: () => invoke('app.pickCsv'),
     getUpdateStatus: () => invoke('app.getUpdateStatus'),
     checkForUpdates: () => invoke('app.checkForUpdates'),
-    quitAndInstall: () => invoke('app.quitAndInstall')
+    quitAndInstall: () => invoke('app.quitAndInstall'),
+    addToDictionary: (input) => invoke('app.addToDictionary', input)
   },
   spaces: {
     list: () => invoke('spaces.list'),
@@ -28,7 +29,9 @@ export const api: AppApi = {
     duplicate: (input) => invoke('spaces.duplicate', input),
     getTree: (input) => invoke('spaces.getTree', input),
     exportToFolder: (input) => invoke('spaces.exportToFolder', input),
-    importFromFolder: () => invoke('spaces.importFromFolder')
+    importFromFolder: () => invoke('spaces.importFromFolder'),
+    exportBackup: () => invoke('spaces.exportBackup'),
+    importBackup: () => invoke('spaces.importBackup')
   },
   folders: {
     create: (input) => invoke('folders.create', input),
@@ -42,8 +45,14 @@ export const api: AppApi = {
     create: (input) => invoke('pages.create', input),
     update: (input) => invoke('pages.update', input),
     delete: (input) => invoke('pages.delete', input),
+    restore: (input) => invoke('pages.restore', input),
+    purge: (input) => invoke('pages.purge', input),
     duplicate: (input) => invoke('pages.duplicate', input),
-    move: (input) => invoke('pages.move', input)
+    move: (input) => invoke('pages.move', input),
+    listVersions: (input) => invoke('pages.listVersions', input),
+    restoreVersion: (input) => invoke('pages.restoreVersion', input),
+    snapshot: (input) => invoke('pages.snapshot', input),
+    listRuns: (input) => invoke('pages.listRuns', input)
   },
   run: {
     execute: (input) => invoke('run.execute', input)

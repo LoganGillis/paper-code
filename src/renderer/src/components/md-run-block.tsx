@@ -12,6 +12,7 @@ import { newBlockId } from '@/lib/run-block'
 import { getRunContext } from '@/lib/run-context'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
+import { RunOutput } from '@/components/run-output'
 import { wantsNewTab } from '@/lib/platform'
 
 export const RunnableCode = Node.create({
@@ -124,7 +125,7 @@ function RunnableCodeView({
         contentEditable={false}
       >
         {canEdit ? (
-          <div className="flex rounded-md bg-sidebar p-0.5">
+          <div className="flex rounded-sm bg-sidebar p-0.5">
             {(['javascript', 'typescript'] as const).map((id) => (
               <Button
                 key={id}
@@ -132,7 +133,7 @@ function RunnableCodeView({
                 size="sm"
                 variant="ghost"
                 className={cn(
-                  'h-6 px-2 text-[11px]',
+                  'h-6 rounded-sm px-2 text-[11px]',
                   language === id && 'bg-paper text-foreground shadow-sm'
                 )}
                 onClick={() => updateAttributes({ language: id })}
@@ -180,23 +181,8 @@ function RunnableCodeView({
         />
       </div>
       {run ? (
-        <div
-          className="select-text border-t border-border/60 bg-sidebar/50 px-3 py-2 font-mono text-[12.5px] leading-6"
-          contentEditable={false}
-        >
-          {run.logs.map((line, index) => (
-            <p
-              key={`${line.level}-${index}`}
-              className={cn(
-                line.level === 'error' && 'text-destructive',
-                line.level === 'warn' && 'text-amber-800 dark:text-amber-200'
-              )}
-            >
-              {line.message}
-            </p>
-          ))}
-          {run.result ? <p className="text-ink-soft">{run.result}</p> : null}
-          {run.error ? <p className="text-destructive">{run.error}</p> : null}
+        <div className="border-t border-border/60 bg-sidebar/50" contentEditable={false}>
+          <RunOutput run={run} />
         </div>
       ) : null}
     </NodeViewWrapper>

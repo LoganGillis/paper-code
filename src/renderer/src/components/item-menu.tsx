@@ -15,6 +15,7 @@ export function ItemMenu({
   onDelete,
   onArchive,
   onUnarchive,
+  onRestore,
   onSecrets,
   className
 }: {
@@ -23,6 +24,7 @@ export function ItemMenu({
   onDelete: () => void
   onArchive?: () => void
   onUnarchive?: () => void
+  onRestore?: () => void
   onSecrets?: () => void
   className?: string
 }): React.JSX.Element {
@@ -73,10 +75,16 @@ export function ItemMenu({
             Unarchive
           </DropdownMenuItem>
         ) : null}
+        {onRestore ? (
+          <DropdownMenuItem onSelect={onRestore}>
+            <ArchiveRestore className="size-3.5" />
+            Restore
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
           <Trash2 className="size-3.5" />
-          Delete
+          {onRestore ? 'Delete forever' : 'Move to trash'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

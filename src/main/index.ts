@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -8,6 +8,11 @@ import { seedIfEmpty } from './seed'
 import { checkForUpdates, initUpdates } from './updates'
 
 app.setName('Paper')
+
+ipcMain.on('paper:set-title', (event, title: string) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) win.setTitle(typeof title === 'string' && title.trim() ? title : 'Paper')
+})
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -58,6 +63,14 @@ function createWindow(): BrowserWindow {
       event.preventDefault()
       mainWindow.webContents.send('paper:close-tab')
     }
+  })
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    if (!params.misspelledWord && params.dictionarySuggestions.length === 0) return
+    mainWindow.webContents.send('paper:spell-context', {
+      misspelledWord: params.misspelledWord,
+      suggestions: params.dictionarySuggestions
+    })
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {

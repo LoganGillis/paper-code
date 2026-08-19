@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { FileCode2, FileSpreadsheet, FileText, House, Plus, X } from 'lucide-react'
+import { FileCode2, FileSpreadsheet, FileText, House, Pin, Plus, X } from 'lucide-react'
 import type { Page, PageSummary, SpaceTree } from '@shared/api'
 import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
@@ -33,7 +33,10 @@ export function TabBar(): React.JSX.Element {
     createPage,
     importCsv,
     spaceId,
-    spaces
+    spaces,
+    openDesk,
+    pinnedTabIds,
+    togglePinTab
   } = useWorkspace()
 
   const lastClose = useRef(0)
@@ -65,6 +68,11 @@ export function TabBar(): React.JSX.Element {
         requestClose()
         return
       }
+      if (event.code === 'Digit0') {
+        event.preventDefault()
+        openDesk()
+        return
+      }
       const match = /^Digit([1-9])$/.exec(event.code)
       const userTabs = visibleTabs.filter((tab) => !isDeskPageId(tab.pageId))
       if (!match || userTabs.length === 0) return
@@ -83,7 +91,7 @@ export function TabBar(): React.JSX.Element {
       window.removeEventListener('keydown', onKey)
       unsubscribe?.()
     }
-  }, [requestClose, selectPage, setPaneFocus, visibleTabs])
+  }, [openDesk, requestClose, selectPage, setPaneFocus, visibleTabs])
 
   return (
     <div
@@ -96,6 +104,7 @@ export function TabBar(): React.JSX.Element {
         const pinned = isDeskPageId(tab.pageId)
         const summary = resolveSummary(tab.pageId, tab.spaceId, trees, pagesById)
         const isMain = page?.id === tab.pageId
+        const isUserPinned = pinnedTabIds.includes(tab.pageId)
         const split = isMain && beside && !pinned
         const besideSummary = split
           ? resolveSummary(beside.pageId, beside.spaceId, trees, pagesById)
@@ -183,12 +192,20 @@ export function TabBar(): React.JSX.Element {
                   event.stopPropagation()
                   closeTab(tab.pageId)
                 }}
+                onContextMenu={(event) => {
+                  if (pinned) return
+                  event.preventDefault()
+                  togglePinTab(tab.pageId)
+                }}
               >
                 {pinned ? (
                   <House className="size-4" strokeWidth={1.75} />
                 ) : (
                   <>
                     <TabGlyph summary={summary} running={runningPageIds.includes(tab.pageId)} />
+                    {isUserPinned ? (
+                      <Pin className="size-3 shrink-0 text-muted-foreground" strokeWidth={2} />
+                    ) : null}
                     <span className="truncate">{displayTitle(summary?.title ?? 'Untitled')}</span>
                     <span className="relative flex size-4 shrink-0 items-center justify-center">
                       {summary ? (
@@ -334,6 +351,9 @@ function resolveSummary(
             folderId: null,
             sortOrder: 0,
             archived: false,
+            deletedAt: null,
+            locked: true,
+            spellcheck: false,
             icon: 'BookOpen',
             iconColor: 'slate',
             updatedAt: ''
@@ -346,6 +366,9 @@ function resolveSummary(
               folderId: null,
               sortOrder: 0,
               archived: false,
+              deletedAt: null,
+              locked: false,
+              spellcheck: false,
               icon: 'House',
               iconColor: 'slate',
               updatedAt: ''

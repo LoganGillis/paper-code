@@ -105,7 +105,7 @@ export function IconPicker({
               title={COLOR_LABELS[id]}
               aria-label={COLOR_LABELS[id]}
               className={cn(
-                'size-6 rounded-full icon-chip',
+                'size-6 rounded-md icon-chip',
                 `icon-chip-${id}`,
                 color === id && 'ring-2 ring-ring ring-offset-2 ring-offset-popover'
               )}

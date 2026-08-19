@@ -26,12 +26,16 @@ Paper is a local notebook: spaces, folders, pages. The metaphor is a **desk**, n
 - Clicking a page **replaces** the current tab. Right-click **Open in new tab**, or middle-click, to add one. Middle-click a tab to close it.
 - `⌘1`–`⌘9` switch **user** tabs (desk is skipped). `⌘W` closes a **tab**, not the window.
 - The desk is a permanently pinned icon tab on the left of the strip. It cannot be closed.
-- Pages can be **archived**. Sidebar archive icon (next to Guide) toggles that view.
+- Pages can be **archived**. Sidebar archive icon (next to Guide) toggles that view. **Delete** moves a page to trash (30 days, then gone). Trash is the bin icon next to Archive.
+- **Open beside** splits the current tab: one tab, two panes. The tab shows both titles; click a half to focus that pane. Tab **X** closes the pair. `⌘W` unsplits first, then closes the remaining page.
+- Drag pages and folders in the sidebar to reorder. Right-click a tab to pin it so a later click does not replace it.
+- Settings → Data exports a full Paper backup (`paper-backup.json`) with no secret values. Space-level export still writes a folder of files.
 - Page title + icon picker in the header (locked on the Guide).
 - Selection color is a translucent wash of the **page** accent (`--page-accent`).
 - Find/replace on code pages uses the custom FindBar, not CodeMirror’s default panel. Markdown pages support ⌘F / Ctrl+F.
-- **Open beside** splits the current tab: one tab, two panes. The tab shows both titles; click a half to focus that pane. Tab **X** closes the pair. `⌘W` unsplits first, then closes the remaining page.
-- Drag pages and folders in the sidebar to reorder. Right-click a space to export or import a folder of files (`paper.json`; secret **names** only).
+- `/` slash menu is grouped (Text / Paper) and scrolls in place. Right-click selected text for formatting, colors, and spell suggestions.
+- Markdown can **run a page**: a play control bound to a JS/TS page (not inline source).
+- Code pages keep run history. Markdown and code pages have a ••• menu (lock, spellcheck, version history, archive, trash). `⌘S` snapshots and flashes Saved.
 
 ## Desk
 
@@ -114,6 +118,9 @@ Appearance only (system / light / dark).
 | `⌘W` | Close tab |
 | `⌘⇧W` | Close window |
 | `⌘1`–`⌘9` | Switch tab (`⌘9` = last) |
+| `⌘0` | Desk |
+| `⌘S` | Snapshot save |
+| `⌘D` | Duplicate the current markdown block |
 | `/` | Slash menu (Markdown) |
 | `[[` | Page link picker |
 

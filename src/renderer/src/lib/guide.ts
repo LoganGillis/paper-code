@@ -239,6 +239,9 @@ export function buildGuidePage(spaceId: string, trees: Record<string, SpaceTree>
     iconColor: 'slate',
     sortOrder: 0,
     archived: false,
+    deletedAt: null,
+    locked: true,
+    spellcheck: false,
     createdAt: now,
     updatedAt: now
   }

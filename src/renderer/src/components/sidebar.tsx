@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Archive, BookOpen, Plus, Search, Settings } from 'lucide-react'
+import { Archive, BookOpen, Plus, Search, Settings, Trash2 } from 'lucide-react'
 import { SpaceSection } from '@/components/file-tree'
 import { SearchDialog } from '@/components/search-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
@@ -20,7 +20,16 @@ import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 
 export function Sidebar(): React.JSX.Element {
-  const { spaces, trees, createSpace, openGuide, showArchived, setShowArchived } = useWorkspace()
+  const {
+    spaces,
+    trees,
+    createSpace,
+    openGuide,
+    showArchived,
+    setShowArchived,
+    showTrash,
+    setShowTrash
+  } = useWorkspace()
   const [newSpaceName, setNewSpaceName] = useState('')
   const [spaceOpen, setSpaceOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -73,7 +82,9 @@ export function Sidebar(): React.JSX.Element {
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-1 py-1">
           {spaces.length === 0 ? (
-            <p className="px-4 py-8 text-sm text-muted-foreground">Create a space to begin.</p>
+            <div className="flex min-h-[12rem] items-center justify-center px-4 text-center text-sm text-muted-foreground">
+              Create a space to begin.
+            </div>
           ) : (
             spaces.map((space) =>
               trees[space.id] ? <SpaceSection key={space.id} tree={trees[space.id]} /> : null
@@ -98,12 +109,35 @@ export function Sidebar(): React.JSX.Element {
             type="button"
             variant="ghost"
             size="icon"
-            className={cn('size-8', showArchived && 'bg-accent text-accent-foreground')}
+            className={cn(
+              'size-8',
+              showArchived && 'bg-foreground/10 text-foreground ring-1 ring-foreground/25'
+            )}
             aria-label={showArchived ? 'Hide archive' : 'Show archive'}
             aria-pressed={showArchived}
-            onClick={() => setShowArchived(!showArchived)}
+            onClick={() => {
+              setShowTrash(false)
+              setShowArchived(!showArchived)
+            }}
           >
             <Archive />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              'size-8',
+              showTrash && 'bg-foreground/10 text-foreground ring-1 ring-foreground/25'
+            )}
+            aria-label={showTrash ? 'Hide trash' : 'Show trash'}
+            aria-pressed={showTrash}
+            onClick={() => {
+              setShowArchived(false)
+              setShowTrash(!showTrash)
+            }}
+          >
+            <Trash2 />
           </Button>
         </div>
         <Button

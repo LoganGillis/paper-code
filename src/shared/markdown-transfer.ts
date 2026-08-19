@@ -88,6 +88,10 @@ export function docToMarkdown(content: string): string {
       lines.push(`:::paper-chart{pageId=${pageId} kind=${kind} x=${x} y=${y}}`, ':::', '')
       continue
     }
+    if (node.type === 'scriptRun') {
+      lines.push(`:::paper-script{pageId=${String(node.attrs?.pageId ?? '')}}`, ':::', '')
+      continue
+    }
     if (node.type === 'pageLink') {
       lines.push(`[page](paper://${String(node.attrs?.pageId ?? '')})`, '')
     }
@@ -136,7 +140,7 @@ export function markdownToDoc(markdown: string): string {
       })
       continue
     }
-    const directive = line.match(/^:::paper-(run|csv|chart)\{([^}]*)\}\s*$/)
+    const directive = line.match(/^:::paper-(run|csv|chart|script)\{([^}]*)\}\s*$/)
     if (directive) {
       const kind = directive[1]
       const attrs = attrsFrom(directive[2] ?? '')
@@ -158,6 +162,8 @@ export function markdownToDoc(markdown: string): string {
         })
       } else if (kind === 'csv') {
         content.push({ type: 'csvEmbed', attrs: { pageId: attrs.pageId ?? '' } })
+      } else if (kind === 'script') {
+        content.push({ type: 'scriptRun', attrs: { pageId: attrs.pageId ?? '' } })
       } else {
         content.push({
           type: 'chartEmbed',

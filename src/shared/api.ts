@@ -24,6 +24,9 @@ export type PageSummary = Appearance & {
   folderId: string | null
   sortOrder: number
   archived: boolean
+  deletedAt: string | null
+  locked: boolean
+  spellcheck: boolean
   updatedAt: string
 }
 
@@ -33,6 +36,27 @@ export type Page = PageSummary & {
   description: string
   createdAt: string
   updatedAt: string
+}
+
+export type PageVersion = {
+  id: string
+  pageId: string
+  title: string
+  content: string
+  description: string
+  createdAt: string
+}
+
+export type RunRecord = {
+  id: string
+  pageId: string
+  language: 'javascript' | 'typescript'
+  source: string
+  logs: RunLog[]
+  result?: string
+  error?: string
+  inputs: string
+  createdAt: string
 }
 
 export type FolderNode = Appearance & {
@@ -49,6 +73,7 @@ export type SpaceTree = {
   folders: FolderNode[]
   pages: PageSummary[]
   archivedPages: PageSummary[]
+  trashedPages: PageSummary[]
 }
 
 export type AppConfig = {
@@ -67,9 +92,20 @@ export type UpdateStatus = {
   error?: string
 }
 
+export type RunLog = {
+  level: 'log' | 'info' | 'warn' | 'error'
+  message: string
+  kind?: 'text' | 'table' | 'object'
+  table?: string[][]
+  object?: unknown
+}
+
 export type RunResult = {
-  logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; message: string }>
+  logs: RunLog[]
   result?: string
+  resultKind?: 'text' | 'table' | 'object'
+  resultTable?: string[][]
+  resultObject?: unknown
   error?: string
 }
 
@@ -92,6 +128,7 @@ export type AppApi = {
     getUpdateStatus: () => Promise<UpdateStatus>
     checkForUpdates: () => Promise<UpdateStatus>
     quitAndInstall: () => Promise<void>
+    addToDictionary: (input: { word: string }) => Promise<void>
   }
   spaces: {
     list: () => Promise<Space[]>
@@ -108,6 +145,8 @@ export type AppApi = {
     getTree: (input: { id: string }) => Promise<SpaceTree>
     exportToFolder: (input: { id: string }) => Promise<string | null>
     importFromFolder: () => Promise<Space | null>
+    exportBackup: () => Promise<string | null>
+    importBackup: () => Promise<number | null>
   }
   folders: {
     create: (input: {
@@ -146,15 +185,23 @@ export type AppApi = {
       description?: string
       type?: PageType
       archived?: boolean
+      locked?: boolean
+      spellcheck?: boolean
       icon?: IconName
       iconColor?: IconColorId
     }) => Promise<Page>
     delete: (input: { id: string }) => Promise<void>
+    restore: (input: { id: string }) => Promise<Page>
+    purge: (input: { id: string }) => Promise<void>
     move: (input: {
       id: string
       folderId?: string | null
       beforeId?: string | null
     }) => Promise<void>
+    listVersions: (input: { id: string }) => Promise<PageVersion[]>
+    restoreVersion: (input: { id: string; versionId: string }) => Promise<Page>
+    snapshot: (input: { id: string }) => Promise<PageVersion>
+    listRuns: (input: { id: string }) => Promise<RunRecord[]>
   }
   run: {
     execute: (input: {
