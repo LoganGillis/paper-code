@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  DATABASE_URL: file:./prisma/dev.db
+
 jobs:
   macos:
     runs-on: macos-latest
