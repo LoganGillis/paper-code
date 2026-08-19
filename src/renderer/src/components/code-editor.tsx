@@ -45,7 +45,7 @@ const runKeymap = Prec.highest(
 )
 
 function paperTheme(dark: boolean, accent: string): ReturnType<typeof EditorView.theme> {
-  const selection = `color-mix(in oklab, ${accent} ${dark ? 38 : 28}%, transparent)`
+  const selection = `color-mix(in oklab, ${accent} ${dark ? 52 : 44}%, transparent)`
   return EditorView.theme(
     {
       '&': {

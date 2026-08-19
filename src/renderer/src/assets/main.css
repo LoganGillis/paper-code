@@ -177,8 +177,8 @@
 }
 
 .tiptap.tiptap-compact {
-  font-size: 0.92rem;
-  line-height: 1.55;
+  font-size: 0.82rem;
+  line-height: 1.5;
   min-height: 2.5rem;
 }
 
@@ -224,12 +224,12 @@
 
 .accent-select ::selection,
 .accent-select *::selection {
-  background: color-mix(in oklab, var(--page-accent) 32%, transparent);
+  background: color-mix(in oklab, var(--page-accent) 48%, transparent);
 }
 
 .accent-select .cm-selectionBackground,
 .accent-select .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
-  background: color-mix(in oklab, var(--page-accent) 32%, transparent) !important;
+  background: color-mix(in oklab, var(--page-accent) 48%, transparent) !important;
 }
 
 .paper-page {
@@ -282,8 +282,8 @@
 .tiptap {
   outline: none;
   color: var(--foreground);
-  font-size: 1.05rem;
-  line-height: 1.75;
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
 .tiptap p.is-editor-empty:first-child::before {
@@ -295,26 +295,26 @@
 }
 
 .tiptap h1 {
-  font-size: 1.85rem;
+  font-size: 1.65rem;
   font-weight: 650;
   letter-spacing: -0.03em;
   line-height: 1.2;
-  margin: 1.4rem 0 0.5rem;
+  margin: 1.3rem 0 0.45rem;
 }
 
 .tiptap h2 {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 620;
   letter-spacing: -0.025em;
   line-height: 1.25;
-  margin: 1.25rem 0 0.4rem;
+  margin: 1.15rem 0 0.35rem;
 }
 
 .tiptap h3 {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 1.1rem 0 0.35rem;
+  margin: 1rem 0 0.3rem;
 }
 
 .tiptap p {

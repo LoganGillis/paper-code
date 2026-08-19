@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChartColumn, Play, Table2 } from 'lucide-react'
+import { ArrowLeft, ChartColumn, Play, Table2 } from 'lucide-react'
 import { ICON_ACCENT } from '@shared/icons'
 import type { Page, RunResult } from '@shared/api'
 import { api } from '@/lib/rpc'
@@ -14,6 +14,7 @@ import { MarkdownEditor } from '@/components/markdown-editor'
 import { DeskBlotter } from '@/components/desk-blotter'
 import { isDeskPageId } from '@/lib/desk'
 import { isGuidePageId } from '@/lib/guide'
+import { parseBlockPageId } from '@/lib/run-block'
 import { loadChartSpec, saveChartSpec, type ChartSpec } from '@/lib/chart-data'
 import { RUN_ACCENT } from '@/lib/run-accent'
 import { cn } from '@/lib/utils'
@@ -45,7 +46,10 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     changePageType,
     runningPageIds,
     setPageRunning,
-    preserveEditorFocus
+    preserveEditorFocus,
+    pagesById,
+    selectPage,
+    saveBlockContent
   } = useWorkspace()
   const [title, setTitle] = useState(page.title)
   const [source, setSource] = useState(page.content)
@@ -55,7 +59,15 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     const stored = Number(window.localStorage.getItem('paper.consoleHeight'))
     return Number.isFinite(stored) && stored >= 88 ? stored : 144
   })
-  const saveContent = useDebouncedSaver(page.id, savePageContent)
+  const blockRef = parseBlockPageId(page.id)
+  const parentPage = blockRef ? (pagesById[blockRef.pageId] ?? null) : null
+  const saveContent = useDebouncedSaver(page.id, async (id, content) => {
+    if (blockRef) {
+      await saveBlockContent(blockRef.pageId, blockRef.blockId, { source: content })
+      return
+    }
+    await savePageContent(id, content)
+  })
   const saveDescription = useDebouncedSaver(page.id, savePageDescription)
   const locked = isGuidePageId(page.id)
   const isCode = page.type === 'javascript' || page.type === 'typescript'
@@ -69,6 +81,10 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     setTitle(page.title)
   }, [page.title])
 
+  useEffect(() => {
+    setSource(page.content)
+  }, [page.id, page.content])
+
   const onRun = useCallback(async () => {
     if (page.type !== 'javascript' && page.type !== 'typescript') return
     setPageRunning(page.id, true)
@@ -78,13 +94,13 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
           language: page.type,
           source,
           spaceId: page.spaceId,
-          pageId: page.id
+          pageId: blockRef?.pageId ?? page.id
         })
       )
     } finally {
       setPageRunning(page.id, false)
     }
-  }, [page.id, page.spaceId, page.type, setPageRunning, source])
+  }, [blockRef?.pageId, page.id, page.spaceId, page.type, setPageRunning, source])
 
   return (
     <article
@@ -98,7 +114,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
         )}
       >
         <div className="mb-3 flex items-center gap-3">
-          {locked ? (
+          {locked || blockRef ? (
             <IconBadge icon={page.icon} color={page.iconColor} className="size-9" />
           ) : (
             <IconPicker
@@ -108,7 +124,21 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               onChange={(appearance) => void updatePageAppearance(page.id, appearance)}
             />
           )}
-          {locked ? (
+          {blockRef ? (
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                className="mb-1 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+                onClick={() => void selectPage(blockRef.pageId, page.spaceId)}
+              >
+                <ArrowLeft className="size-3.5" />
+                {parentPage?.title || 'Back'}
+              </button>
+              <h1 className="w-full truncate text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
+                {page.title}
+              </h1>
+            </div>
+          ) : locked ? (
             <h1 className="w-full text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
               {page.title}
             </h1>
@@ -126,7 +156,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
             />
           )}
         </div>
-        {isCode || isCsv ? (
+        {(isCode || isCsv) && !blockRef ? (
           <MarkdownEditor
             content={page.description}
             compact
@@ -221,8 +251,14 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                     'h-6 px-2 text-[11px]',
                     page.type === id && 'bg-paper text-foreground shadow-sm'
                   )}
+                  disabled={Boolean(blockRef && isGuidePageId(blockRef.pageId))}
                   onClick={() => {
-                    if (page.type !== id) void changePageType(page.id, id)
+                    if (page.type === id) return
+                    if (blockRef) {
+                      void saveBlockContent(blockRef.pageId, blockRef.blockId, { language: id })
+                      return
+                    }
+                    void changePageType(page.id, id)
                   }}
                 >
                   {id === 'javascript' ? 'JavaScript' : 'TypeScript'}
@@ -251,6 +287,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               restoreFocus={active && preserveEditorFocus}
               onRun={() => void onRun()}
               value={source}
+              readOnly={Boolean(blockRef && isGuidePageId(blockRef.pageId))}
               language={page.type === 'typescript' ? 'typescript' : 'javascript'}
               onChange={(content) => {
                 setSource(content)
@@ -278,15 +315,21 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
             }}
           />
           <section
-            className="shrink-0 overflow-auto bg-sidebar/50 px-4 py-2 select-text"
+            className="shrink-0 overflow-auto bg-sidebar/50 px-4 py-2 shadow-[inset_0_10px_12px_-12px_rgb(0_0_0/0.28)] select-text"
             style={{ height: consoleHeight }}
           >
             <div className="mb-1 flex items-center justify-between">
               <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
                 Output
               </p>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setRun(null)}>
-                Clear console
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => setRun(null)}
+              >
+                Clear
               </Button>
             </div>
             {!run ? (

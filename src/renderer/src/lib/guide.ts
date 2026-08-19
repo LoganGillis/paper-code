@@ -30,10 +30,10 @@ function bullet(...items: string[]): DocNode {
   }
 }
 
-function code(language: 'javascript' | 'typescript', source: string): DocNode {
+function code(language: 'javascript' | 'typescript', source: string, blockId: string): DocNode {
   return {
     type: 'runnableCode',
-    attrs: { language },
+    attrs: { language, blockId },
     content: source ? [text(source)] : []
   }
 }
@@ -82,7 +82,8 @@ export function buildGuideDoc(_trees: Record<string, SpaceTree>): DocNode {
 console.log($yesterday, '→', $tomorrow)
 console.log('week', $startOfWeek, 'to', $endOfWeek)
 console.log($monday, $friday)
-$today.subDays(1).isSame($yesterday)`
+$today.subDays(1).isSame($yesterday)`,
+      'guide-today'
     ),
     paragraph(
       'Move with ',
@@ -105,7 +106,8 @@ $today.subDays(1).isSame($yesterday)`
 console.log(stamp, stamp.format('MMMM D, YYYY'))
 console.log('next Friday', $today.next('friday'))
 console.log('nine thirty', $today.at(9, 30))
-$yesterday < $today`
+$yesterday < $today`,
+      'guide-dates'
     ),
     paragraph(
       'Compare with ',
@@ -145,7 +147,8 @@ console.log(orders)
 console.log(orders.columns, orders.shape)
 const paid = orders.where('status', 'paid')
 console.log('paid', paid.length, 'sum qty', paid.sum('qty'))
-orders.groupBy('region').count()`
+orders.groupBy('region').count()`,
+      'guide-orders'
     ),
     paragraph(
       'Shape and columns: ',
@@ -206,7 +209,8 @@ const priced = orders.leftJoin(products, 'sku').assign({
   revenue: (row) => row.qty * row.unit_price
 })
 console.log(priced.select('customer', 'product', 'qty', 'revenue').head(4))
-priced.groupBy('region').agg({ revenue: 'sum', qty: 'sum' })`
+priced.groupBy('region').agg({ revenue: 'sum', qty: 'sum' })`,
+      'guide-join'
     )
   )
 

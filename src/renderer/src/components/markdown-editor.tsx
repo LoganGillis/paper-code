@@ -237,6 +237,12 @@ export function MarkdownEditor({
     if (readOnly) setMenu(null)
   }, [editor, readOnly])
 
+  useEffect(() => {
+    if (!editor) return
+    if (JSON.stringify(editor.getJSON()) === content) return
+    editor.commands.setContent(parseDoc(content), { emitUpdate: false })
+  }, [content, editor])
+
   const slashMatches = useMemo(() => {
     if (!menu || menu.kind !== 'slash') return []
     const q = menu.query.toLowerCase()

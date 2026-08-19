@@ -41,7 +41,7 @@ export function IconBadge({
       )}
       style={variant === 'plain' ? { color: ICON_ACCENT[color] } : undefined}
     >
-      <NamedIcon name={icon} className={variant === 'plain' ? 'size-4' : 'size-3.5'} />
+      <NamedIcon name={icon} className={variant === 'plain' ? 'size-[70%]' : 'size-[72%]'} />
     </span>
   )
 }

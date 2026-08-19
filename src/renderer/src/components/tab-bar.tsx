@@ -1,10 +1,16 @@
 import { useEffect, useRef } from 'react'
-import { House, X } from 'lucide-react'
+import { FileCode2, FileSpreadsheet, FileText, House, Plus, X } from 'lucide-react'
 import type { PageSummary } from '@shared/api'
-import { displayTitle } from '@shared/titles'
+import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
 import { TypeBadge } from '@/components/type-badge'
 import { Spinner } from '@/components/ui/spinner'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { isDeskPageId } from '@/lib/desk'
 import { isGuidePageId } from '@/lib/guide'
 import { isMac } from '@/lib/platform'
@@ -12,7 +18,19 @@ import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 
 export function TabBar(): React.JSX.Element {
-  const { tabs, trees, page, pagesById, selectPage, closeTab, runningPageIds } = useWorkspace()
+  const {
+    tabs,
+    trees,
+    page,
+    pagesById,
+    selectPage,
+    closeTab,
+    runningPageIds,
+    createPage,
+    importCsv,
+    spaceId,
+    spaces
+  } = useWorkspace()
 
   const lastClose = useRef(0)
   const requestClose = (): void => {
@@ -160,6 +178,75 @@ export function TabBar(): React.JSX.Element {
           </span>
         )
       })}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="New"
+            className="app-no-drag flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-paper/80 hover:text-foreground"
+          >
+            <Plus className="size-3.5" strokeWidth={2} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void createPage(host, 'markdown', defaultPageTitle('markdown'), undefined, {
+                newTab: true
+              })
+            }}
+          >
+            <FileText className="size-3.5" />
+            New page
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void createPage(host, 'javascript', defaultPageTitle('javascript'), undefined, {
+                newTab: true
+              })
+            }}
+          >
+            <FileCode2 className="size-3.5" />
+            New JavaScript
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void createPage(host, 'typescript', defaultPageTitle('typescript'), undefined, {
+                newTab: true
+              })
+            }}
+          >
+            <FileCode2 className="size-3.5" />
+            New TypeScript
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void createPage(host, 'csv', defaultPageTitle('csv'), undefined, { newTab: true })
+            }}
+          >
+            <FileSpreadsheet className="size-3.5" />
+            New CSV
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void importCsv(host, { newTab: true })
+            }}
+          >
+            <FileSpreadsheet className="size-3.5" />
+            Open CSV
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }

@@ -6,6 +6,14 @@ import { DESK_PAGE_ID, buildDeskPage, isDeskPageId } from '@/lib/desk'
 import { GUIDE_PAGE_ID, buildGuidePage, isGuidePageId } from '@/lib/guide'
 import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
 import { collectPages } from '@/lib/pages'
+import {
+  blockText,
+  buildBlockPage,
+  findRunBlock,
+  isBlockPageId,
+  parseBlockPageId,
+  writeRunBlock
+} from '@/lib/run-block'
 
 export type SelectPageOptions = { newTab?: boolean }
 
@@ -35,6 +43,19 @@ type WorkspaceContextValue = {
   selectPage: (id: string, spaceId: string, options?: SelectPageOptions) => Promise<void>
   openGuide: () => void
   openDesk: () => void
+  openRunBlock: (input: {
+    pageId: string
+    spaceId: string
+    blockId: string
+    language: 'javascript' | 'typescript'
+    source: string
+    newTab?: boolean
+  }) => void
+  saveBlockContent: (
+    parentId: string,
+    blockId: string,
+    patch: { source?: string; language?: 'javascript' | 'typescript' }
+  ) => Promise<void>
   preserveEditorFocus: boolean
   closeTab: (pageId: string) => void
   showArchived: boolean
@@ -45,8 +66,14 @@ type WorkspaceContextValue = {
   selectFolder: (spaceId: string, folderId: string | null) => void
   createSpace: (name: string) => Promise<void>
   createFolder: (spaceId: string, name: string) => Promise<void>
-  createPage: (spaceId: string, type: PageType, title: string, content?: string) => Promise<void>
-  importCsv: (spaceId: string) => Promise<void>
+  createPage: (
+    spaceId: string,
+    type: PageType,
+    title: string,
+    content?: string,
+    options?: SelectPageOptions
+  ) => Promise<void>
+  importCsv: (spaceId: string, options?: SelectPageOptions) => Promise<void>
   duplicateSpace: (id: string) => Promise<void>
   duplicateFolder: (id: string) => Promise<void>
   duplicatePage: (id: string) => Promise<void>
@@ -154,7 +181,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   }, [])
 
   const isLockedPageId = (id: string): boolean =>
-    isGuidePageId(id) || isDeskPageId(id) || isGuideDataPageId(id)
+    isGuidePageId(id) || isDeskPageId(id) || isGuideDataPageId(id) || isBlockPageId(id)
 
   const openDesk = useCallback(() => {
     const host = spaceId ?? spaces[0]?.id ?? ''
@@ -182,6 +209,61 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     if (!hostSpace) return
     void selectPageRef.current(GUIDE_PAGE_ID, hostSpace)
   }, [spaceId, spaces])
+
+  const openRunBlock = useCallback(
+    (input: {
+      pageId: string
+      spaceId: string
+      blockId: string
+      language: 'javascript' | 'typescript'
+      source: string
+      newTab?: boolean
+    }) => {
+      const parent = pagesByIdRef.current[input.pageId]
+      const host: Page = parent ?? {
+        id: input.pageId,
+        spaceId: input.spaceId,
+        folderId: null,
+        title: 'Untitled',
+        type: 'markdown',
+        content: '',
+        description: '',
+        icon: 'FileText',
+        iconColor: 'slate',
+        sortOrder: 0,
+        archived: false,
+        createdAt: '',
+        updatedAt: ''
+      }
+      const virtual = buildBlockPage(host, input.blockId, input.language, input.source)
+      storePage(virtual)
+      void selectPageRef.current(virtual.id, input.spaceId, { newTab: input.newTab })
+    },
+    [storePage]
+  )
+
+  const saveBlockContent = useCallback(
+    async (
+      parentId: string,
+      blockId: string,
+      patch: { source?: string; language?: 'javascript' | 'typescript' }
+    ) => {
+      if (isLockedPageId(parentId)) return
+      const parent =
+        pagesByIdRef.current[parentId] ?? (await api.pages.get({ id: parentId }).catch(() => null))
+      if (!parent) return
+      const nextContent = writeRunBlock(parent.content, blockId, patch)
+      if (!nextContent) return
+      const updated = await api.pages.update({ id: parentId, content: nextContent })
+      storePage(updated)
+      const block = findRunBlock(updated.content, blockId)
+      if (block) {
+        const language = block.attrs?.language === 'typescript' ? 'typescript' : 'javascript'
+        storePage(buildBlockPage(updated, blockId, language, blockText(block)))
+      }
+    },
+    [storePage]
+  )
 
   const placeTab = useCallback(
     (current: TabRef[], id: string, nextSpaceId: string, newTab: boolean): TabRef[] => {
@@ -237,6 +319,36 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       }
       if (isDeskPageId(id)) {
         openDesk()
+        return
+      }
+      if (isBlockPageId(id)) {
+        const ref = parseBlockPageId(id)
+        if (!ref) return
+        const parent =
+          pagesByIdRef.current[ref.pageId] ??
+          (await api.pages.get({ id: ref.pageId }).catch(() => null))
+        if (!parent) return
+        storePage(parent)
+        const fromDoc = findRunBlock(parent.content, ref.blockId)
+        const existing = pagesByIdRef.current[id]
+        const next = fromDoc
+          ? buildBlockPage(
+              parent,
+              ref.blockId,
+              fromDoc.attrs?.language === 'typescript' ? 'typescript' : 'javascript',
+              blockText(fromDoc)
+            )
+          : existing
+            ? existing
+            : buildBlockPage(parent, ref.blockId, 'javascript', '')
+        storePage(next)
+        setPage(next)
+        window.localStorage.setItem(PAGE_KEY, id)
+        setTabs((current) => {
+          const pinned = placeTab(current, id, parent.spaceId, Boolean(options?.newTab))
+          window.localStorage.setItem(TABS_KEY, JSON.stringify(pinned))
+          return pinned
+        })
         return
       }
       const cached = pagesByIdRef.current[id]
@@ -340,6 +452,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
           parsedTabs.filter(
             (tab) =>
               isGuidePageId(tab.pageId) ||
+              isBlockPageId(tab.pageId) ||
               (!isDeskPageId(tab.pageId) && list.some((space) => space.id === tab.spaceId))
           ),
           hostSpace
@@ -421,7 +534,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   )
 
   const createPage = useCallback(
-    async (nextSpaceId: string, type: PageType, title: string, content?: string) => {
+    async (
+      nextSpaceId: string,
+      type: PageType,
+      title: string,
+      content?: string,
+      options?: SelectPageOptions
+    ) => {
       const created = await api.pages.create({
         spaceId: nextSpaceId,
         folderId: spaceId === nextSpaceId ? activeFolderId : null,
@@ -430,16 +549,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         content
       })
       await refreshTree(nextSpaceId)
-      await selectPage(created.id, nextSpaceId)
+      await selectPage(created.id, nextSpaceId, options)
     },
     [activeFolderId, refreshTree, selectPage, spaceId]
   )
 
   const importCsv = useCallback(
-    async (nextSpaceId: string) => {
+    async (nextSpaceId: string, options?: SelectPageOptions) => {
       const picked = await api.app.pickCsv()
       if (!picked) return
-      await createPage(nextSpaceId, 'csv', picked.name, picked.content)
+      await createPage(nextSpaceId, 'csv', picked.name, picked.content, options)
     },
     [createPage]
   )
@@ -611,13 +730,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setTabs((current) => {
         const host = spaceId ?? spaces[0]?.id ?? ''
         const nextTabs = pinDesk(
-          current.filter((tab) => tab.pageId !== id),
+          current.filter((tab) => {
+            if (tab.pageId === id) return false
+            const ref = parseBlockPageId(tab.pageId)
+            return !ref || ref.pageId !== id
+          }),
           host
         )
         window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
         return nextTabs
       })
-      if (pageRef.current?.id === id) openDesk()
+      const viewing = pageRef.current?.id
+      const viewingBlock = viewing ? parseBlockPageId(viewing) : null
+      if (viewing === id || viewingBlock?.pageId === id) openDesk()
       await refreshTree(updated.spaceId)
     },
     [dropPages, openDesk, refreshTree, spaceId, spaces]
@@ -651,13 +776,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setTabs((current) => {
         const host = spaceId ?? spaces[0]?.id ?? ''
         const nextTabs = pinDesk(
-          current.filter((tab) => tab.pageId !== id),
+          current.filter((tab) => {
+            if (tab.pageId === id) return false
+            const ref = parseBlockPageId(tab.pageId)
+            return !ref || ref.pageId !== id
+          }),
           host
         )
         window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
         return nextTabs
       })
-      if (page?.id === id) {
+      const viewing = page?.id
+      const viewingBlock = viewing ? parseBlockPageId(viewing) : null
+      if (viewing === id || viewingBlock?.pageId === id) {
         openDesk()
       }
       if (spaceForPage) await refreshTree(spaceForPage)
@@ -682,6 +813,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       selectPage,
       openGuide,
       openDesk,
+      openRunBlock,
+      saveBlockContent,
       closeTab,
       showArchived,
       setShowArchived,
@@ -730,7 +863,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       importCsv,
       openDesk,
       openGuide,
+      openRunBlock,
       openSpaceIds,
+      saveBlockContent,
       page,
       pagesById,
       preserveEditorFocus,

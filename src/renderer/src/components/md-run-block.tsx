@@ -2,15 +2,17 @@ import { useCallback, useState } from 'react'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { ReactNodeViewProps } from '@tiptap/react'
-import { Play } from 'lucide-react'
+import { Maximize2, Play } from 'lucide-react'
 import type { RunResult } from '@shared/api'
 import { CodeEditor } from '@/components/code-editor'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/rpc'
 import { RUN_ACCENT } from '@/lib/run-accent'
+import { newBlockId } from '@/lib/run-block'
 import { getRunContext } from '@/lib/run-context'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
+import { wantsNewTab } from '@/lib/platform'
 
 export const RunnableCode = Node.create({
   name: 'runnableCode',
@@ -34,6 +36,12 @@ export const RunnableCode = Node.create({
         default: 'javascript',
         parseHTML: (element) => element.getAttribute('data-language') || 'javascript',
         renderHTML: (attributes) => ({ 'data-language': attributes.language })
+      },
+      blockId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-block-id'),
+        renderHTML: (attributes) =>
+          attributes.blockId ? { 'data-block-id': attributes.blockId } : {}
       }
     }
   },
@@ -64,9 +72,23 @@ function RunnableCodeView({
   const paper = getRunContext(editor)
   const pageId = paper.pageId
   const spaceId = paper.spaceId
-  const { pagesById } = useWorkspace()
+  const { pagesById, openRunBlock } = useWorkspace()
   const accent = pagesById[pageId]?.iconColor ?? 'slate'
   const source = node.textContent
+
+  const openFull = (newTab = false): void => {
+    if (!pageId || !spaceId) return
+    const blockId = String(node.attrs.blockId || '') || newBlockId()
+    if (!node.attrs.blockId) updateAttributes({ blockId })
+    openRunBlock({
+      pageId,
+      spaceId,
+      blockId,
+      language,
+      source,
+      newTab
+    })
+  }
 
   const writeSource = useCallback(
     (value: string) => {
@@ -120,7 +142,19 @@ function RunnableCodeView({
             ))}
           </div>
         ) : null}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          {pageId && spaceId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              aria-label="Open as page"
+              onClick={(event) => openFull(wantsNewTab(event))}
+            >
+              <Maximize2 />
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"

@@ -21,7 +21,7 @@ Add a server method in `src/main/procedures.ts` **and** the matching type on `Ap
 - Do not put secrets back in Settings. They belong on the **space** menu.
 - Do not store secret values in the renderer, logs, or localStorage.
 - Do not fall back to plaintext if `safeStorage` is unavailable.
-- Virtual pages (`paper:guide`, `paper:desk`, `paper:guide:orders`, `paper:guide:products`) are not in the user tree. Guide sample CSVs are hidden and must keep working after the user deletes seed data.
+- Virtual pages (`paper:guide`, `paper:desk`, `paper:guide:orders`, `paper:guide:products`, `paper:block/…`) are not in the user tree. Guide sample CSVs are hidden and must keep working after the user deletes seed data. Fullscreen markdown run blocks are `paper:block/{pageId}/{blockId}` and write back into the parent doc.
 - The desk is a single **pinned** root tab (icon only, cannot close). Do not create a desk per space.
 - Opening a page replaces the current tab unless the user middle-clicks or chooses **Open in new tab**. `⌘1`–`⌘9` skip the desk.
 - Renderer HMR does not reload main. After RPC, runner, sealing, or window options change, restart `pnpm dev`.

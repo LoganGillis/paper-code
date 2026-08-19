@@ -63,7 +63,7 @@ Custom blocks:
 
 | Node | File | Notes |
 | --- | --- | --- |
-| `runnableCode` | `md-run-block.tsx` | JS/TS, CodeMirror, Run with page accent |
+| `runnableCode` | `md-run-block.tsx` | JS/TS, CodeMirror, Run with page accent. Maximize opens it as a virtual code page (`paper:block/…`) with a back link. |
 | `csvEmbed` | `md-csv-embed.tsx` | Full CSV editor (same as the page) |
 | `chartEmbed` | `md-chart-embed.tsx` | Chart a CSV page (kind / x / y attrs) |
 | `pageLink` | `md-page-link.tsx` | Inline link chip |
