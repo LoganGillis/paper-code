@@ -65,6 +65,31 @@ function getMigrationsDir(): string {
   return join(process.resourcesPath, 'prisma', 'migrations')
 }
 
+function stripSqlComments(sql: string): string {
+  return sql
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n')
+    .trim()
+}
+
+function tableExists(db: Database.Database, name: string): boolean {
+  const row = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) as
+    | { name: string }
+    | undefined
+  return Boolean(row)
+}
+
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>
+  return rows.some((row) => row.name === column)
+}
+
+function forgetMigration(db: Database.Database, applied: Set<string>, id: string): void {
+  db.prepare('DELETE FROM _migrations WHERE id = ?').run(id)
+  applied.delete(id)
+}
+
 function applyMigrations(databasePath: string): void {
   mkdirSync(dirname(databasePath), { recursive: true })
 
@@ -79,6 +104,14 @@ function applyMigrations(databasePath: string): void {
   const applied = new Set(
     (db.prepare('SELECT id FROM _migrations').all() as { id: string }[]).map((row) => row.id)
   )
+
+  // 0.1.3 recorded Prisma files as applied while skipping `-- CreateTable` / `-- AlterTable` bodies.
+  if (!tableExists(db, 'Space')) {
+    db.exec('DELETE FROM _migrations')
+    applied.clear()
+  } else if (tableExists(db, 'Page') && !columnExists(db, 'Page', 'deletedAt')) {
+    forgetMigration(db, applied, '20260819120000_trash_lock_history')
+  }
 
   const migrationsDir = getMigrationsDir()
   if (!existsSync(migrationsDir)) {
@@ -99,8 +132,8 @@ function applyMigrations(databasePath: string): void {
 
     const statements = readFileSync(sqlPath, 'utf8')
       .split(';')
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0 && !part.startsWith('--'))
+      .map((part) => stripSqlComments(part))
+      .filter((part) => part.length > 0)
     for (const statement of statements) {
       try {
         db.exec(statement)
@@ -110,6 +143,16 @@ function applyMigrations(databasePath: string): void {
       }
     }
     db.prepare('INSERT INTO _migrations (id) VALUES (?)').run(id)
+  }
+
+  if (tableExists(db, 'Page')) {
+    const addColumn = (column: string, ddl: string): void => {
+      if (columnExists(db, 'Page', column)) return
+      db.exec(`ALTER TABLE "Page" ADD COLUMN ${ddl}`)
+    }
+    addColumn('deletedAt', '"deletedAt" DATETIME')
+    addColumn('locked', '"locked" BOOLEAN NOT NULL DEFAULT 0')
+    addColumn('spellcheck', '"spellcheck" BOOLEAN NOT NULL DEFAULT 1')
   }
 
   db.close()
