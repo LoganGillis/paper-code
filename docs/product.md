@@ -29,7 +29,9 @@ Paper is a local notebook: spaces, folders, pages. The metaphor is a **desk**, n
 - Pages can be **archived**. Sidebar archive icon (next to Guide) toggles that view.
 - Page title + icon picker in the header (locked on the Guide).
 - Selection color is a translucent wash of the **page** accent (`--page-accent`).
-- Find/replace on code pages uses the custom FindBar, not CodeMirror’s default panel.
+- Find/replace on code pages uses the custom FindBar, not CodeMirror’s default panel. Markdown pages support ⌘F / Ctrl+F.
+- **Open beside** splits the current tab: one tab, two panes. The tab shows both titles; click a half to focus that pane. Tab **X** closes the pair. `⌘W` unsplits first, then closes the remaining page.
+- Drag pages and folders in the sidebar to reorder. Right-click a space to export or import a folder of files (`paper.json`; secret **names** only).
 
 ## Desk
 

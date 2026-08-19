@@ -4,7 +4,20 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Typography from '@tiptap/extension-typography'
 import type { Editor } from '@tiptap/react'
-import { ChartColumn, FileCode2, FileSpreadsheet, FileText, Link2 } from 'lucide-react'
+import { TextSelection } from '@tiptap/pm/state'
+import {
+  CaseSensitive,
+  ChartColumn,
+  ChevronDown,
+  ChevronUp,
+  FileCode2,
+  FileSpreadsheet,
+  FileText,
+  Link2,
+  X
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { ChartEmbed } from '@/components/md-chart-embed'
 import { CsvEmbed } from '@/components/md-csv-embed'
 import { PageLink } from '@/components/md-page-link'
@@ -156,7 +169,8 @@ export function MarkdownEditor({
   restoreFocus = false,
   pageId,
   spaceId,
-  readOnly = false
+  readOnly = false,
+  active = true
 }: {
   content: string
   onChange: (value: string) => void
@@ -166,8 +180,13 @@ export function MarkdownEditor({
   pageId?: string
   spaceId?: string
   readOnly?: boolean
+  active?: boolean
 }): React.JSX.Element {
   const { trees } = useWorkspace()
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findIndex, setFindIndex] = useState(0)
+  const [matchCase, setMatchCase] = useState(false)
   const [menu, setMenu] = useState<{
     query: string
     from: number
@@ -292,6 +311,58 @@ export function MarkdownEditor({
     if (restoreFocus && editor) editor.commands.focus()
   }, [editor, restoreFocus])
 
+  const doc = editor?.state.doc
+  const findHits = useMemo(() => {
+    if (!editor || !doc || !findQuery) return [] as Array<{ from: number; to: number }>
+    const needle = matchCase ? findQuery : findQuery.toLowerCase()
+    const hits: Array<{ from: number; to: number }> = []
+    doc.descendants((node, pos) => {
+      if (!node.isText || !node.text) return
+      const hay = matchCase ? node.text : node.text.toLowerCase()
+      let start = 0
+      while (start < hay.length) {
+        const at = hay.indexOf(needle, start)
+        if (at < 0) break
+        hits.push({ from: pos + at, to: pos + at + findQuery.length })
+        start = at + Math.max(1, needle.length)
+      }
+    })
+    return hits
+  }, [doc, editor, findQuery, matchCase])
+
+  const selectHit = useCallback(
+    (index: number) => {
+      if (!editor || findHits.length === 0) return
+      const next = ((index % findHits.length) + findHits.length) % findHits.length
+      const hit = findHits[next]
+      if (!hit) return
+      setFindIndex(next)
+      const selection = TextSelection.create(editor.state.doc, hit.from, hit.to)
+      editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView())
+    },
+    [editor, findHits]
+  )
+
+  useEffect(() => {
+    if (findOpen && findQuery) selectHit(0)
+    // only jump when the query itself changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findQuery, matchCase, findOpen])
+
+  useEffect(() => {
+    if (!active || compact) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return
+      if (event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        event.stopPropagation()
+        setFindOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [active, compact])
+
   useEffect(() => {
     if (!editor) return
     const onKey = (event: KeyboardEvent): void => {
@@ -323,6 +394,70 @@ export function MarkdownEditor({
 
   return (
     <div className="relative">
+      {findOpen && !compact ? (
+        <div className="paper-float absolute top-0 right-0 z-20 flex items-center gap-1 p-2">
+          <Input
+            autoFocus
+            value={findQuery}
+            onChange={(event) => {
+              setFindQuery(event.target.value)
+              setFindIndex(0)
+            }}
+            placeholder="Find"
+            className="h-8 w-44"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                selectHit(findIndex + (event.shiftKey ? -1 : 1))
+              }
+              if (event.key === 'Escape') setFindOpen(false)
+            }}
+          />
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {findQuery ? `${findHits.length === 0 ? 0 : findIndex + 1}/${findHits.length}` : '0/0'}
+          </span>
+          <Button
+            type="button"
+            variant={matchCase ? 'secondary' : 'ghost'}
+            size="icon"
+            className="size-8"
+            aria-label="Match case"
+            onClick={() => setMatchCase((value) => !value)}
+          >
+            <CaseSensitive className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Previous"
+            onClick={() => selectHit(findIndex - 1)}
+          >
+            <ChevronUp className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Next"
+            onClick={() => selectHit(findIndex + 1)}
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Close find"
+            onClick={() => setFindOpen(false)}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+      ) : null}
       <EditorContent editor={editor} />
       {!readOnly && menu && menu.kind === 'slash' && slashMatches.length > 0 ? (
         <div

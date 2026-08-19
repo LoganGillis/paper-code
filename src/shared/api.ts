@@ -106,6 +106,8 @@ export type AppApi = {
     delete: (input: { id: string }) => Promise<void>
     duplicate: (input: { id: string }) => Promise<Space>
     getTree: (input: { id: string }) => Promise<SpaceTree>
+    exportToFolder: (input: { id: string }) => Promise<string | null>
+    importFromFolder: () => Promise<Space | null>
   }
   folders: {
     create: (input: {
@@ -121,6 +123,11 @@ export type AppApi = {
     }) => Promise<FolderNode>
     delete: (input: { id: string }) => Promise<void>
     duplicate: (input: { id: string }) => Promise<FolderNode>
+    move: (input: {
+      id: string
+      parentId?: string | null
+      beforeId?: string | null
+    }) => Promise<void>
   }
   pages: {
     get: (input: { id: string }) => Promise<Page>
@@ -143,6 +150,11 @@ export type AppApi = {
       iconColor?: IconColorId
     }) => Promise<Page>
     delete: (input: { id: string }) => Promise<void>
+    move: (input: {
+      id: string
+      folderId?: string | null
+      beforeId?: string | null
+    }) => Promise<void>
   }
   run: {
     execute: (input: {

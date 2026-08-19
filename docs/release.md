@@ -70,7 +70,8 @@ Unsigned builds work, but Gatekeeper (Mac) and SmartScreen (Windows) will warn. 
 2. In Certificates, Identifiers & Profiles, create a **Developer ID Application** certificate (this is what Gatekeeper wants — not an Apple Development / Mac App Store cert).
 3. Install the cert in Keychain on the Mac that builds, or export a `.p12` and set `CSC_LINK` + `CSC_KEY_PASSWORD`.
 4. Create an [app-specific password](https://appleid.apple.com) for notarization.
-5. In `electron-builder.yml` set `mac.notarize: true`, then publish with:
+5. Install the Developer ID cert in Keychain. The next `pnpm release` signs automatically when a **Developer ID Application** identity is present (no extra config).
+6. In `electron-builder.yml` set `mac.notarize: true`, then publish with:
 
 ```bash
 APPLE_ID=you@apple.com

@@ -11,6 +11,7 @@ import {
   FolderPlus,
   KeyRound,
   Plus,
+  Columns2,
   SquareArrowOutUpRight,
   Trash2
 } from 'lucide-react'
@@ -70,7 +71,9 @@ function PageRow({
     unarchivePage,
     selectFolder,
     updatePageAppearance,
-    duplicatePage
+    duplicatePage,
+    openBeside,
+    movePage
   } = useWorkspace()
   const active = selected?.id === page.id
 
@@ -78,6 +81,33 @@ function PageRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.setData(
+              'application/x-paper',
+              JSON.stringify({ kind: 'page', id: page.id, spaceId })
+            )
+            event.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragOver={(event) => {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+          }}
+          onDrop={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            try {
+              const payload = JSON.parse(event.dataTransfer.getData('application/x-paper')) as {
+                kind: string
+                id: string
+              }
+              if (payload.kind === 'page' && payload.id !== page.id) {
+                void movePage({ id: payload.id, folderId: page.folderId, beforeId: page.id })
+              }
+            } catch {
+              // ignore
+            }
+          }}
           className={cn(
             'group flex h-8 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
             active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70'
@@ -140,6 +170,14 @@ function PageRow({
           <SquareArrowOutUpRight className="size-3.5" />
           Open in new tab
         </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() => {
+            void openBeside(page.id, spaceId)
+          }}
+        >
+          <Columns2 className="size-3.5" />
+          Open beside
+        </ContextMenuItem>
         <ContextMenuItem onSelect={() => void duplicatePage(page.id)}>
           <CopyPlus className="size-3.5" />
           Duplicate
@@ -185,7 +223,9 @@ function FolderRow({
     renameFolder,
     deleteFolder,
     updateFolderAppearance,
-    duplicateFolder
+    duplicateFolder,
+    moveFolder,
+    movePage
   } = useWorkspace()
   const [open, setOpen] = useState(true)
   const active = activeFolderId === folder.id
@@ -195,6 +235,36 @@ function FolderRow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(
+                'application/x-paper',
+                JSON.stringify({ kind: 'folder', id: folder.id, spaceId })
+              )
+              event.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              try {
+                const payload = JSON.parse(event.dataTransfer.getData('application/x-paper')) as {
+                  kind: string
+                  id: string
+                }
+                if (payload.kind === 'page') {
+                  void movePage({ id: payload.id, folderId: folder.id, beforeId: null })
+                }
+                if (payload.kind === 'folder' && payload.id !== folder.id) {
+                  void moveFolder({ id: payload.id, parentId: folder.id, beforeId: null })
+                }
+              } catch {
+                // ignore
+              }
+            }}
             className={cn(
               'group flex h-8 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
               active ? 'bg-accent/80' : 'hover:bg-accent/70'
@@ -316,7 +386,11 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
     deleteSpace,
     createPage,
     createFolder,
-    importCsv
+    importCsv,
+    exportSpace,
+    importSpace,
+    movePage,
+    moveFolder
   } = useWorkspace()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [secretsOpen, setSecretsOpen] = useState(false)
@@ -455,6 +529,10 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
             <KeyRound className="size-3.5" />
             Secrets
           </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void exportSpace(tree.space.id)}>
+            Export space
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void importSpace()}>Import space</ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => void duplicateSpace(tree.space.id)}>
             <CopyPlus className="size-3.5" />
@@ -480,7 +558,30 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
           open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         )}
       >
-        <div className="overflow-hidden">
+        <div
+          className="overflow-hidden"
+          onDragOver={(event) => {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+          }}
+          onDrop={(event) => {
+            event.preventDefault()
+            try {
+              const payload = JSON.parse(event.dataTransfer.getData('application/x-paper')) as {
+                kind: string
+                id: string
+              }
+              if (payload.kind === 'page') {
+                void movePage({ id: payload.id, folderId: null, beforeId: null })
+              }
+              if (payload.kind === 'folder') {
+                void moveFolder({ id: payload.id, parentId: null, beforeId: null })
+              }
+            } catch {
+              // ignore
+            }
+          }}
+        >
           <SpaceTreeView tree={tree} />
         </div>
       </div>

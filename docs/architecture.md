@@ -54,14 +54,16 @@ Persistence (`localStorage`):
 - `paper.tabs`
 - `paper.openSpaces`
 - `paper.consoleHeight`
+- `paper.beside`
+- `paper.besideWidth`
 - `paper.csvView.${pageId}`
 - `paper.chart.${pageId}`
 
 Bootstrap loads those **once** (`booted` ref) and always `pinDesk` so `paper:desk` is first. Closing real tabs never removes it.
 
-`selectPage` / `openGuide` / `openDesk` / `closeTab` are the only ways tabs should change. `closeTab` no-ops on the desk.
+`selectPage` / `openGuide` / `openDesk` / `closeTab` / `openBeside` are the only ways tabs should change. `closeTab` no-ops on the desk. The beside page is not its own tab.
 
-Keep-alive: `PageView` renders a pane per tab (`invisible` when inactive) so CodeMirror/TipTap do not remount.
+Keep-alive: `PageView` renders a pane per tab (`hidden` when inactive) so CodeMirror/TipTap do not remount. The beside page is rendered only in the right pane.
 
 ## Markdown
 

@@ -13,6 +13,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3 --build-from-source",
     "dev": "electron-vite dev",

@@ -7,6 +7,7 @@ import { getDatabasePath, getPrisma } from './db'
 import { didSeedThisLaunch } from './seed'
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updates'
 import { executeSnippet } from './runner'
+import { exportSpace, importSpace } from './transfer'
 import { isSecretEncryptionAvailable, sealSecret, unsealSecret } from './secrets'
 import {
   defaultColorForPage,
@@ -418,6 +419,16 @@ export const procedures: AppApi = {
     getTree: async (input) => {
       const data = idInput.parse(input)
       return buildTree(data.id)
+    },
+    exportToFolder: async (input) => {
+      const data = idInput.parse(input)
+      return exportSpace(data.id)
+    },
+    importFromFolder: async () => {
+      const id = await importSpace()
+      if (!id) return null
+      const space = await getPrisma().space.findUniqueOrThrow({ where: { id } })
+      return serializeSpace(space)
     }
   },
   folders: {
@@ -470,13 +481,47 @@ export const procedures: AppApi = {
       const data = idInput.parse(input)
       const folder = await getPrisma().folder.findUniqueOrThrow({ where: { id: data.id } })
       return duplicateFolderTree(folder.id, folder.spaceId, folder.parentId, true)
+    },
+    move: async (input) => {
+      const data = z
+        .object({
+          id: z.string().min(1),
+          parentId: z.string().min(1).nullable().optional(),
+          beforeId: z.string().min(1).nullable().optional()
+        })
+        .parse(input)
+      const prisma = getPrisma()
+      const folder = await prisma.folder.findUniqueOrThrow({ where: { id: data.id } })
+      const parentId = data.parentId === undefined ? folder.parentId : data.parentId
+      if (parentId === folder.id) throw new Error('A folder cannot go inside itself.')
+      await prisma.folder.update({ where: { id: folder.id }, data: { parentId } })
+      const siblings = await prisma.folder.findMany({
+        where: { spaceId: folder.spaceId, parentId },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
+      })
+      const rest = siblings.filter((item) => item.id !== folder.id)
+      const at =
+        data.beforeId != null
+          ? Math.max(
+              0,
+              rest.findIndex((item) => item.id === data.beforeId)
+            )
+          : rest.length
+      const insertAt = data.beforeId && at < 0 ? rest.length : at
+      rest.splice(insertAt, 0, folder)
+      await Promise.all(
+        rest.map((item, index) =>
+          prisma.folder.update({ where: { id: item.id }, data: { sortOrder: index } })
+        )
+      )
     }
   },
   pages: {
     get: async (input) => {
       const data = idInput.parse(input)
       if (isGuideDataPageId(data.id)) {
-        const host = (await getPrisma().space.findFirst({ orderBy: { createdAt: 'asc' } }))?.id ?? ''
+        const host =
+          (await getPrisma().space.findFirst({ orderBy: { createdAt: 'asc' } }))?.id ?? ''
         const found = buildGuideDataPages(host).find((page) => page.id === data.id)
         if (found) return found
       }
@@ -569,6 +614,33 @@ export const procedures: AppApi = {
     delete: async (input) => {
       const data = idInput.parse(input)
       await getPrisma().page.delete({ where: { id: data.id } })
+    },
+    move: async (input) => {
+      const data = z
+        .object({
+          id: z.string().min(1),
+          folderId: z.string().min(1).nullable().optional(),
+          beforeId: z.string().min(1).nullable().optional()
+        })
+        .parse(input)
+      const prisma = getPrisma()
+      const page = await prisma.page.findUniqueOrThrow({ where: { id: data.id } })
+      const folderId = data.folderId === undefined ? page.folderId : data.folderId
+      await prisma.page.update({ where: { id: page.id }, data: { folderId } })
+      const siblings = await prisma.page.findMany({
+        where: { spaceId: page.spaceId, folderId, archived: false },
+        orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }]
+      })
+      const rest = siblings.filter((item) => item.id !== page.id)
+      const at =
+        data.beforeId != null ? rest.findIndex((item) => item.id === data.beforeId) : rest.length
+      const insertAt = data.beforeId != null && at < 0 ? rest.length : Math.max(0, at)
+      rest.splice(insertAt, 0, page)
+      await Promise.all(
+        rest.map((item, index) =>
+          prisma.page.update({ where: { id: item.id }, data: { sortOrder: index } })
+        )
+      )
     }
   },
   run: {

@@ -21,6 +21,7 @@ const SPACE_KEY = 'paper.spaceId'
 const PAGE_KEY = 'paper.activePageId'
 const TABS_KEY = 'paper.tabs'
 const OPEN_SPACES_KEY = 'paper.openSpaces'
+const BESIDE_KEY = 'paper.beside'
 
 function pinDesk(tabs: TabRef[], hostSpace: string): TabRef[] {
   const rest = tabs.filter((tab) => !isDeskPageId(tab.pageId))
@@ -58,6 +59,23 @@ type WorkspaceContextValue = {
   ) => Promise<void>
   preserveEditorFocus: boolean
   closeTab: (pageId: string) => void
+  beside: TabRef | null
+  paneFocus: 'main' | 'beside'
+  setPaneFocus: (focus: 'main' | 'beside') => void
+  openBeside: (id: string, spaceId: string) => Promise<void>
+  closeBeside: () => void
+  exportSpace: (id: string) => Promise<void>
+  importSpace: () => Promise<void>
+  movePage: (input: {
+    id: string
+    folderId?: string | null
+    beforeId?: string | null
+  }) => Promise<void>
+  moveFolder: (input: {
+    id: string
+    parentId?: string | null
+    beforeId?: string | null
+  }) => Promise<void>
   showArchived: boolean
   setShowArchived: (value: boolean) => void
   archivePage: (id: string) => Promise<void>
@@ -119,6 +137,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const [runningPageIds, setRunningPageIds] = useState<string[]>([])
   const [preserveEditorFocus, setPreserveEditorFocus] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [beside, setBeside] = useState<TabRef | null>(null)
+  const [paneFocus, setPaneFocus] = useState<'main' | 'beside'>('main')
   const selectPageRef = useRef<
     (id: string, spaceId: string, options?: SelectPageOptions) => Promise<void>
   >(async () => undefined)
@@ -357,6 +377,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         setActiveFolderId(cached.folderId)
       }
       setSpaceId(nextSpaceId)
+      setPaneFocus('main')
+      if (beside?.pageId === id) {
+        setBeside(null)
+        window.localStorage.removeItem(BESIDE_KEY)
+      }
       window.localStorage.setItem(PAGE_KEY, id)
       window.localStorage.setItem(SPACE_KEY, nextSpaceId)
       setTabs((current) => {
@@ -375,7 +400,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setPage(next)
       setActiveFolderId(next.folderId)
     },
-    [openDesk, placeTab, rememberGuideData, spaceId, spaces, storePage, trees]
+    [beside?.pageId, openDesk, placeTab, rememberGuideData, spaceId, spaces, storePage, trees]
   )
 
   useEffect(() => {
@@ -393,15 +418,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         )
         window.localStorage.setItem(TABS_KEY, JSON.stringify(nextTabs))
         dropPages([pageId])
+        if (beside && (beside.pageId === pageId || page?.id === pageId)) {
+          setBeside(null)
+          window.localStorage.removeItem(BESIDE_KEY)
+          setPaneFocus('main')
+        }
         if (page?.id === pageId) {
-          const fallback = nextTabs.at(-1)
+          const fallback = nextTabs.find(
+            (tab) => !isDeskPageId(tab.pageId) && tab.pageId !== pageId
+          )
           if (fallback) void selectPage(fallback.pageId, fallback.spaceId)
           else openDesk()
         }
         return nextTabs
       })
     },
-    [dropPages, openDesk, page?.id, selectPage, spaceId]
+    [beside, dropPages, openDesk, page?.id, selectPage, spaceId]
   )
 
   const selectSpace = useCallback((id: string) => {
@@ -494,6 +526,45 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
           await selectPageRef.current(preferredPage.pageId, preferredPage.spaceId)
         } else {
           await selectPageRef.current(DESK_PAGE_ID, hostSpace)
+        }
+
+        let parsedBeside: TabRef | null = null
+        try {
+          const storedBeside = window.localStorage.getItem(BESIDE_KEY)
+          parsedBeside = storedBeside ? (JSON.parse(storedBeside) as TabRef) : null
+        } catch {
+          parsedBeside = null
+        }
+        const mainId = pageRef.current?.id
+        const besideOk =
+          parsedBeside &&
+          parsedBeside.pageId &&
+          parsedBeside.pageId !== mainId &&
+          !isDeskPageId(parsedBeside.pageId) &&
+          !isGuidePageId(parsedBeside.pageId) &&
+          !isBlockPageId(parsedBeside.pageId) &&
+          list.some((space) => space.id === parsedBeside.spaceId)
+        if (besideOk && parsedBeside) {
+          const nextBeside = parsedBeside
+          const loaded = await api.pages.get({ id: nextBeside.pageId }).catch(() => null)
+          if (loaded && !loaded.archived) {
+            storePage(loaded)
+            setBeside(nextBeside)
+            setTabs((current) => {
+              if (!current.some((tab) => tab.pageId === nextBeside.pageId)) return current
+              const host = pageRef.current?.spaceId ?? nextBeside.spaceId
+              const pinned = pinDesk(
+                current.filter((tab) => tab.pageId !== nextBeside.pageId),
+                host
+              )
+              window.localStorage.setItem(TABS_KEY, JSON.stringify(pinned))
+              return pinned
+            })
+          } else {
+            window.localStorage.removeItem(BESIDE_KEY)
+          }
+        } else if (parsedBeside) {
+          window.localStorage.removeItem(BESIDE_KEY)
         }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Failed to load workspace')
@@ -709,6 +780,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       } else if (page?.spaceId === id) {
         openDesk()
       }
+      setBeside((current) => {
+        if (current?.spaceId === id) {
+          window.localStorage.removeItem(BESIDE_KEY)
+          setPaneFocus('main')
+          return null
+        }
+        return current
+      })
     },
     [dropPages, openDesk, page, refreshSpaces, spaceId, storePage]
   )
@@ -743,6 +822,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       const viewing = pageRef.current?.id
       const viewingBlock = viewing ? parseBlockPageId(viewing) : null
       if (viewing === id || viewingBlock?.pageId === id) openDesk()
+      setBeside((current) => {
+        if (current?.pageId === id) {
+          window.localStorage.removeItem(BESIDE_KEY)
+          return null
+        }
+        return current
+      })
       await refreshTree(updated.spaceId)
     },
     [dropPages, openDesk, refreshTree, spaceId, spaces]
@@ -791,9 +877,85 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       if (viewing === id || viewingBlock?.pageId === id) {
         openDesk()
       }
+      setBeside((current) => {
+        if (current?.pageId === id) {
+          window.localStorage.removeItem(BESIDE_KEY)
+          setPaneFocus('main')
+          return null
+        }
+        return current
+      })
       if (spaceForPage) await refreshTree(spaceForPage)
     },
     [dropPages, openDesk, page, refreshTree, spaceId, spaces]
+  )
+
+  const openBeside = useCallback(
+    async (id: string, nextSpaceId: string) => {
+      if (isDeskPageId(id) || isGuidePageId(id) || isBlockPageId(id)) return
+      if (pageRef.current?.id === id) return
+      if (!pagesByIdRef.current[id]) {
+        const next = await api.pages.get({ id })
+        storePage(next)
+      }
+      const ref = { pageId: id, spaceId: nextSpaceId }
+      setBeside(ref)
+      setPaneFocus('beside')
+      window.localStorage.setItem(BESIDE_KEY, JSON.stringify(ref))
+      setTabs((current) => {
+        if (!current.some((tab) => tab.pageId === id)) return current
+        const host = pageRef.current?.spaceId ?? nextSpaceId
+        const pinned = pinDesk(
+          current.filter((tab) => tab.pageId !== id),
+          host
+        )
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(pinned))
+        return pinned
+      })
+    },
+    [storePage]
+  )
+
+  const closeBeside = useCallback(() => {
+    setBeside(null)
+    setPaneFocus('main')
+    window.localStorage.removeItem(BESIDE_KEY)
+  }, [])
+
+  const exportSpace = useCallback(async (id: string) => {
+    try {
+      await api.spaces.exportToFolder({ id })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to export space')
+    }
+  }, [])
+
+  const importSpace = useCallback(async () => {
+    try {
+      const space = await api.spaces.importFromFolder()
+      if (!space) return
+      await refreshSpaces()
+      setOpenSpaceIds((current) => [...current, space.id])
+      setSpaceId(space.id)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to import space')
+    }
+  }, [refreshSpaces])
+
+  const movePage = useCallback(
+    async (input: { id: string; folderId?: string | null; beforeId?: string | null }) => {
+      await api.pages.move(input)
+      if (spaceId) await refreshTree(spaceId)
+    },
+    [refreshTree, spaceId]
+  )
+
+  const moveFolder = useCallback(
+    async (input: { id: string; parentId?: string | null; beforeId?: string | null }) => {
+      await api.folders.move(input)
+      if (spaceId) await refreshTree(spaceId)
+    },
+    [refreshTree, spaceId]
   )
 
   const value = useMemo<WorkspaceContextValue>(
@@ -816,6 +978,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       openRunBlock,
       saveBlockContent,
       closeTab,
+      beside,
+      paneFocus,
+      setPaneFocus,
+      openBeside,
+      closeBeside,
+      exportSpace,
+      importSpace,
+      movePage,
+      moveFolder,
       showArchived,
       setShowArchived,
       archivePage,
@@ -848,7 +1019,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     [
       activeFolderId,
       archivePage,
+      beside,
       changePageType,
+      closeBeside,
       closeTab,
       createFolder,
       createPage,
@@ -860,8 +1033,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       duplicatePage,
       duplicateSpace,
       error,
+      exportSpace,
       importCsv,
+      importSpace,
+      moveFolder,
+      movePage,
+      openBeside,
       openDesk,
+      paneFocus,
       openGuide,
       openRunBlock,
       openSpaceIds,

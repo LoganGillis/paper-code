@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChartColumn, Play, Table2 } from 'lucide-react'
+import { ArrowLeft, ChartColumn, Play, Table2, X } from 'lucide-react'
 import { ICON_ACCENT } from '@shared/icons'
 import type { Page, RunResult } from '@shared/api'
 import { api } from '@/lib/rpc'
@@ -176,6 +176,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
             readOnly={locked}
             placeholder={locked ? '' : undefined}
             onChange={(content) => saveContent(content)}
+            active={active}
           />
         </div>
       ) : null}
@@ -361,17 +362,23 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
 }
 
 export function PageView(): React.JSX.Element {
-  const { tabs, page, pagesById } = useWorkspace()
+  const { tabs, page, pagesById, beside, closeBeside, paneFocus, setPaneFocus } = useWorkspace()
+  const [besideWidth, setBesideWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem('paper.besideWidth'))
+    return Number.isFinite(stored) && stored >= 280 ? stored : 420
+  })
+  const besidePage = beside ? pagesById[beside.pageId] : null
 
   if (tabs.length === 0) {
     return <DeskBlotter active />
   }
 
-  return (
-    <div className="relative h-full">
+  const main = (
+    <div className="relative min-h-0 min-w-0 flex-1" onMouseDown={() => setPaneFocus('main')}>
       {tabs.map((tab) => {
         const tabPage = pagesById[tab.pageId]
         if (!tabPage && !isDeskPageId(tab.pageId)) return null
+        if (beside?.pageId === tab.pageId && page?.id !== tab.pageId) return null
         const active = page?.id === tab.pageId
         return (
           <div
@@ -380,13 +387,59 @@ export function PageView(): React.JSX.Element {
             aria-hidden={!active}
           >
             {isDeskPageId(tab.pageId) ? (
-              <DeskBlotter active={active} />
+              <DeskBlotter active={active && paneFocus === 'main'} />
             ) : tabPage ? (
-              <PagePane page={tabPage} active={active} />
+              <PagePane page={tabPage} active={active && paneFocus === 'main'} />
             ) : null}
           </div>
         )
       })}
+    </div>
+  )
+
+  if (!beside || !besidePage) return <div className="flex h-full min-w-0">{main}</div>
+
+  return (
+    <div className="flex h-full min-w-0">
+      {main}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        className="w-1.5 shrink-0 cursor-col-resize bg-border/50 hover:bg-foreground/15"
+        onMouseDown={(event) => {
+          event.preventDefault()
+          const startX = event.clientX
+          const startW = besideWidth
+          const onMove = (move: MouseEvent): void => {
+            const next = Math.min(720, Math.max(280, startW - (move.clientX - startX)))
+            setBesideWidth(next)
+            window.localStorage.setItem('paper.besideWidth', String(next))
+          }
+          const onUp = (): void => {
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+          }
+          window.addEventListener('mousemove', onMove)
+          window.addEventListener('mouseup', onUp)
+        }}
+      />
+      <div
+        className="relative min-h-0 shrink-0 overflow-hidden border-l border-border/60 bg-paper"
+        style={{ width: besideWidth }}
+        onMouseDown={() => setPaneFocus('beside')}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="absolute top-2 right-2 z-20 size-7"
+          aria-label="Close beside"
+          onClick={() => closeBeside()}
+        >
+          <X className="size-3.5" />
+        </Button>
+        <PagePane page={besidePage} active={paneFocus === 'beside'} />
+      </div>
     </div>
   )
 }

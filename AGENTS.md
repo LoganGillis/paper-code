@@ -24,6 +24,7 @@ Add a server method in `src/main/procedures.ts` **and** the matching type on `Ap
 - Virtual pages (`paper:guide`, `paper:desk`, `paper:guide:orders`, `paper:guide:products`, `paper:block/…`) are not in the user tree. Guide sample CSVs are hidden and must keep working after the user deletes seed data. Fullscreen markdown run blocks are `paper:block/{pageId}/{blockId}` and write back into the parent doc.
 - The desk is a single **pinned** root tab (icon only, cannot close). Do not create a desk per space.
 - Opening a page replaces the current tab unless the user middle-clicks or chooses **Open in new tab**. `⌘1`–`⌘9` skip the desk.
+- **Open beside** splits the current tab (one tab, two panes). Drag-reorder uses `pages.move` / `folders.move`. Space export writes `paper.json` plus files; secrets export names only.
 - Renderer HMR does not reload main. After RPC, runner, sealing, or window options change, restart `pnpm dev`.
 - After Prisma schema changes: migrate, `pnpm db:generate`, rebuild native if the client ABI shifted.
 

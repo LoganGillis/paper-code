@@ -26,20 +26,24 @@ export const api: AppApi = {
     update: (input) => invoke('spaces.update', input),
     delete: (input) => invoke('spaces.delete', input),
     duplicate: (input) => invoke('spaces.duplicate', input),
-    getTree: (input) => invoke('spaces.getTree', input)
+    getTree: (input) => invoke('spaces.getTree', input),
+    exportToFolder: (input) => invoke('spaces.exportToFolder', input),
+    importFromFolder: () => invoke('spaces.importFromFolder')
   },
   folders: {
     create: (input) => invoke('folders.create', input),
     update: (input) => invoke('folders.update', input),
     delete: (input) => invoke('folders.delete', input),
-    duplicate: (input) => invoke('folders.duplicate', input)
+    duplicate: (input) => invoke('folders.duplicate', input),
+    move: (input) => invoke('folders.move', input)
   },
   pages: {
     get: (input) => invoke('pages.get', input),
     create: (input) => invoke('pages.create', input),
     update: (input) => invoke('pages.update', input),
     delete: (input) => invoke('pages.delete', input),
-    duplicate: (input) => invoke('pages.duplicate', input)
+    duplicate: (input) => invoke('pages.duplicate', input),
+    move: (input) => invoke('pages.move', input)
   },
   run: {
     execute: (input) => invoke('run.execute', input)
