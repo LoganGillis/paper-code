@@ -47,7 +47,7 @@ npx electron-builder --mac --win --publish always
 
 That uploads to [LoganGillis/paper-code](https://github.com/LoganGillis/paper-code) via electron-builder’s GitHub provider. The repo must be **public** for other people’s installs to see updates.
 
-Windows reads `latest.yml` from the release GitHub serves for the tag (`/releases/latest` and `/releases/download/vX/latest.yml`). A second release with the same tag leaves that file 404, and the updater stays on the last feed it could read. The Release workflow publishes macOS first, then uploads `latest.yml` and the NSIS installer onto that same tag.
+Windows reads `latest.yml` from the release GitHub serves for the tag (`/releases/latest` and `/releases/download/vX/latest.yml`). A second release with the same tag leaves one of the feeds 404. The Release workflow builds macOS and Windows without publishing, then uploads every file onto one release. Mac arm64 and x64 must not publish on their own; doing that created two `v0.1.6` and `v0.1.7` releases.
 
 Packaged apps check that repo a few seconds after launch (`electron-updater`). Settings → Updates, and **Paper → Check for Updates…**, share the same status. When a download finishes, **Restart to update** calls `quitAndInstall`.
 

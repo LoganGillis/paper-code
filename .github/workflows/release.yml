@@ -26,12 +26,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec electron-builder --mac --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Do not publish here. arm64 and x64 publish at the same time and GitHub
+      # ends up with two releases for one tag, so one feed 404s.
+      - run: pnpm exec electron-builder --mac --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-dist
+          if-no-files-found: error
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+            dist/latest-mac.yml
 
   windows:
-    needs: macos
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,36 +52,48 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # Publish after macOS so both land on one release. A second v* release
-      # makes releases/download/vX/latest.yml 404, and Windows stays on the last feed it could read.
-      - run: pnpm exec electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Put the Windows feed on the tag release
-        shell: bash
+      - run: pnpm exec electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-dist
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish one release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
-          TAG="v${VERSION}"
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
           grep -q "version: ${VERSION}" dist/latest.yml
-          gh release upload "$TAG" \
-            "dist/latest.yml" \
-            "dist/Paper-${VERSION}-setup.exe" \
-            "dist/Paper-${VERSION}-setup.exe.blockmap" \
-            --clobber
-          gh api "repos/LoganGillis/paper-code/releases/tags/${TAG}" > /tmp/paper-release.json
-          export VERSION
-          python - <<'PY'
+          grep -q "version: ${VERSION}" dist/latest-mac.yml
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/latest.yml dist/latest-mac.yml dist/*.dmg dist/*.zip dist/*.exe dist/*.blockmap --clobber
+          else
+            gh release create "$TAG" dist/latest.yml dist/latest-mac.yml dist/*.dmg dist/*.zip dist/*.exe dist/*.blockmap --title "$VERSION" --notes ""
+          fi
+          gh api "repos/LoganGillis/paper-code/releases/latest" > /tmp/paper-release.json
+          VERSION="$VERSION" python3 - << 'PY'
           import json, os, sys
           rel = json.load(open("/tmp/paper-release.json", encoding="utf-8"))
           version = os.environ["VERSION"]
           names = {asset["name"] for asset in rel["assets"]}
-          need = ["latest.yml", f"Paper-{version}-setup.exe", f"Paper-{version}-setup.exe.blockmap"]
+          need = ["latest.yml", "latest-mac.yml", f"Paper-{version}-setup.exe"]
           missing = [name for name in need if name not in names]
           if missing:
-              print("Windows update feed is missing from the tag release:", ", ".join(missing))
+              print("latest release is missing", ", ".join(missing))
               sys.exit(1)
-          print("tag release", rel["tag_name"], "has", ", ".join(need))
+          print("latest", rel["tag_name"], "has", ", ".join(sorted(names)))
           PY

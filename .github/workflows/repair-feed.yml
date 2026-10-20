@@ -1,0 +1,92 @@
+name: Repair release feed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-feed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy v0.1.7 assets onto the latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, urllib.parse, urllib.request
+
+          token = os.environ["GH_TOKEN"]
+          api = "https://api.github.com/repos/LoganGillis/paper-code"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "User-Agent": "paper-repair",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(url, data=None, accept=None, method=None):
+              req_headers = dict(headers)
+              if accept:
+                  req_headers["Accept"] = accept
+              req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+              with urllib.request.urlopen(req, timeout=300) as resp:
+                  return resp.read()
+
+          latest = json.loads(request(f"{api}/releases/latest"))
+          latest_id = latest["id"]
+          have = {asset["name"] for asset in latest["assets"]}
+          print("latest", latest_id, "has", ", ".join(sorted(have)))
+
+          releases = json.loads(request(f"{api}/releases?per_page=20"))
+          missing = []
+          for release in releases:
+              if release["tag_name"] != "v0.1.7" or release["id"] == latest_id:
+                  continue
+              for asset in release["assets"]:
+                  if asset["name"] not in have and asset["name"] not in {name for name, _ in missing}:
+                      missing.append((asset["name"], asset["id"]))
+
+          if not missing:
+              print("latest release already has every v0.1.7 asset")
+          for name, asset_id in missing:
+              print("copy", name)
+              blob = request(f"{api}/releases/assets/{asset_id}", accept="application/octet-stream")
+              query = urllib.parse.urlencode({"name": name})
+              upload = f"https://uploads.github.com/repos/LoganGillis/paper-code/releases/{latest_id}/assets?{query}"
+              req = urllib.request.Request(
+                  upload,
+                  data=blob,
+                  headers={
+                      **headers,
+                      "Content-Type": "application/octet-stream",
+                      "Content-Length": str(len(blob)),
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=300) as resp:
+                  created = json.loads(resp.read())
+              print("uploaded", created["name"], created["size"])
+              have.add(name)
+
+          need = ["latest.yml", "latest-mac.yml", "Paper-0.1.7-setup.exe", "Paper-0.1.7-arm64-mac.zip"]
+          absent = [name for name in need if name not in have]
+          if absent:
+              raise SystemExit("still missing from latest: " + ", ".join(absent))
+          print("feed complete")
+          PY
+      - name: Confirm public download URLs
+        run: |
+          set -euo pipefail
+          curl -fsSL -H "User-Agent: paper" -o /tmp/latest.yml https://github.com/LoganGillis/paper-code/releases/latest/download/latest.yml
+          curl -fsSL -H "User-Agent: paper" -o /tmp/latest-mac.yml https://github.com/LoganGillis/paper-code/releases/latest/download/latest-mac.yml
+          grep -q "version: 0.1.7" /tmp/latest.yml
+          grep -q "version: 0.1.7" /tmp/latest-mac.yml
+          curl -fsSI -H "User-Agent: paper" https://github.com/LoganGillis/paper-code/releases/latest/download/Paper-0.1.7-setup.exe | head -n 1
+          curl -fsSI -H "User-Agent: paper" https://github.com/LoganGillis/paper-code/releases/latest/download/Paper-0.1.7-arm64-mac.zip | head -n 1
