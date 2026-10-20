@@ -88,5 +88,5 @@ jobs:
           curl -fsSL -H "User-Agent: paper" -o /tmp/latest-mac.yml https://github.com/LoganGillis/paper-code/releases/latest/download/latest-mac.yml
           grep -q "version: 0.1.7" /tmp/latest.yml
           grep -q "version: 0.1.7" /tmp/latest-mac.yml
-          curl -fsSI -H "User-Agent: paper" https://github.com/LoganGillis/paper-code/releases/latest/download/Paper-0.1.7-setup.exe | head -n 1
-          curl -fsSI -H "User-Agent: paper" https://github.com/LoganGillis/paper-code/releases/latest/download/Paper-0.1.7-arm64-mac.zip | head -n 1
+          curl -fsSI -o /dev/null -H "User-Agent: paper" https://github.com/LoganGillis/paper-code/releases/latest/download/Paper-0.1.7-setup.exe
+          curl -fsSI -o /dev/null -H "User-Agent: paper" https://github.com/LoganGillis/paper-code/releases/latest/download/Paper-0.1.7-arm64-mac.zip
