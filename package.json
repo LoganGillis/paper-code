@@ -1,7 +1,7 @@
 {
   "name": "paper",
   "productName": "Paper",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A notebook for notes, tables, and scripts.",
   "main": "./out/main/index.js",
   "author": "Logan Gillis",
@@ -13,7 +13,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts",
+    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts && node scripts/test-migrate.mjs",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3 --build-from-source",
     "dev": "electron-vite dev",
@@ -27,8 +27,8 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "dist": "npm run build && electron-builder --mac --win --publish never",
-    "release": "npm run build && electron-builder --mac --win --publish always"
+    "dist": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && npm run build && electron-builder --mac --win --publish never",
+    "release": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && npm run build && electron-builder --mac --win --publish always"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

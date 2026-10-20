@@ -35,7 +35,7 @@ git push origin v0.1.0
 ```
 
 4. Export a GitHub token that can create releases (`GH_TOKEN` or `GITHUB_TOKEN`).
-5. `pnpm release` (macOS **and** Windows NSIS, then upload)
+5. `pnpm release` (macOS **and** Windows NSIS, then upload). This deletes `dist/` first so an old `latest.yml` cannot be published again.
 
 If packaging already succeeded and only the GitHub upload failed, skip the rebuild:
 
@@ -46,6 +46,8 @@ npx electron-builder --mac --win --publish always
 `better-sqlite3` is a native addon. Local `pnpm release` on this Mac now downloads the official **Windows** Electron prebuild before packing the `.exe` (it will refuse to ship a macOS `.node`). Prefer the **Release** GitHub Action for Windows when you can — it compiles on `windows-latest`.
 
 That uploads to [LoganGillis/paper-code](https://github.com/LoganGillis/paper-code) via electron-builder’s GitHub provider. The repo must be **public** for other people’s installs to see updates.
+
+Windows reads `latest.yml` from the release GitHub serves for the tag (`/releases/latest` and `/releases/download/vX/latest.yml`). A second release with the same tag leaves that file 404, and the updater stays on the last feed it could read. The Release workflow publishes macOS first, then uploads `latest.yml` and the NSIS installer onto that same tag.
 
 Packaged apps check that repo a few seconds after launch (`electron-updater`). Settings → Updates, and **Paper → Check for Updates…**, share the same status. When a download finishes, **Restart to update** calls `quitAndInstall`.
 
