@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { displayTitle } from '@shared/titles'
+import { ConfirmProvider } from '@/components/confirm-dialog'
 import { JsonPreviewProvider } from '@/components/json-preview-dialog'
 import { PageView } from '@/components/page-view'
 import { SavedFlashProvider } from '@/components/saved-flash'
@@ -44,14 +45,16 @@ function Shell(): React.JSX.Element {
 
 function App(): React.JSX.Element {
   return (
-    <JsonPreviewProvider>
-      <WorkspaceProvider>
-        <SavedFlashProvider>
-          <Shell />
-        </SavedFlashProvider>
-      </WorkspaceProvider>
-      <Toaster position="bottom-right" />
-    </JsonPreviewProvider>
+    <ConfirmProvider>
+      <JsonPreviewProvider>
+        <WorkspaceProvider>
+          <SavedFlashProvider>
+            <Shell />
+          </SavedFlashProvider>
+        </WorkspaceProvider>
+        <Toaster position="bottom-right" />
+      </JsonPreviewProvider>
+    </ConfirmProvider>
   )
 }
 

@@ -3,6 +3,7 @@ import { IconBadge } from '@/components/icon-picker'
 import { TypeBadge } from '@/components/type-badge'
 import { cn } from '@/lib/utils'
 import type { PageHit } from '@/lib/pages'
+import { EmptyState } from '@/components/empty-state'
 
 export function PagePickList({
   items,
@@ -14,7 +15,7 @@ export function PagePickList({
   onPick: (item: PageHit) => void
 }): React.JSX.Element {
   if (items.length === 0) {
-    return <p className="px-3 py-4 text-sm text-muted-foreground">No matching pages.</p>
+    return <EmptyState className="py-4">No matching pages.</EmptyState>
   }
   return (
     <div className="max-h-64 overflow-auto py-1">

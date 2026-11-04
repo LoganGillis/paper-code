@@ -7,7 +7,6 @@ import {
   ClipboardPaste,
   Eraser,
   PanelBottom,
-  Play,
   Plus,
   SquareArrowOutUpRight,
   Table2,
@@ -16,11 +15,9 @@ import {
 import { defaultPageTitle } from '@shared/titles'
 import { ICON_ACCENT } from '@shared/icons'
 import { PAGE_TYPES } from '@shared/page-types'
-import type { Page, RunResult } from '@shared/api'
-import { api } from '@/lib/rpc'
+import type { Page } from '@shared/api'
 import { useWorkspace } from '@/lib/workspace'
 import { Button } from '@/components/ui/button'
-import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { CodeEditor } from '@/components/code-editor'
 import { jumpTo } from '@/lib/editor-jump'
 import { resolveJsonFormat, resolveJsonPaste } from '@/lib/json-actions'
@@ -35,13 +32,14 @@ import { isDeskPageId } from '@/lib/desk'
 import { isGuidePageId } from '@/lib/guide'
 import { parseBlockPageId } from '@/lib/run-block'
 import { loadChartSpec, saveChartSpec, type ChartSpec } from '@/lib/chart-data'
-import { RUN_ACCENT } from '@/lib/run-accent'
+import { clearRunDraft, setRunDraft } from '@/lib/run-drafts'
+import { useRunPage } from '@/lib/run-page'
+import { PageHeader } from '@/components/page-header'
+import { RunButton } from '@/components/run-button'
 import { cn } from '@/lib/utils'
-import { modSymbol } from '@/lib/platform'
 import { EditorBar, EditorBarButton, Segmented } from '@/components/editor-bar'
 import { PageActions } from '@/components/page-actions'
 import { RunOutput } from '@/components/run-output'
-import { Spinner } from '@/components/ui/spinner'
 import { useSavedFlash } from '@/components/saved-flash'
 import { usePopoutOutput } from '@/lib/output-popout'
 
@@ -143,8 +141,6 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     savePageDescription,
     updatePageAppearance,
     changePageType,
-    runningPageIds,
-    setPageRunning,
     preserveEditorFocus,
     pagesById,
     selectPage,
@@ -157,8 +153,8 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
   const jsonViewRef = useRef<EditorView | null>(null)
   const [title, setTitle] = useState(page.title)
   const [source, setSource] = useState(page.content)
-  const [run, setRun] = useState<RunResult | null>(null)
-  const running = runningPageIds.includes(page.id)
+  const runner = useRunPage({ tabId: page.id, shared: true })
+  const { run, running } = runner
   const [consoleHeight, setConsoleHeight] = useState(() => {
     const stored = Number(window.localStorage.getItem('paper.consoleHeight'))
     return Number.isFinite(stored) && stored >= 88 ? stored : 144
@@ -171,6 +167,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       return
     }
     await savePageContent(id, content)
+    clearRunDraft(id, content)
   })
   const saveDescription = useDebouncedSaver(page.id, savePageDescription)
 
@@ -212,6 +209,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
   }, [preview, source, writeJson])
   const locked = isGuidePageId(page.id) || page.locked
   const isCode = page.type === 'javascript' || page.type === 'typescript'
+  const language = page.type === 'typescript' ? 'typescript' : 'javascript'
   const isCsv = page.type === 'csv'
   const isJson = page.type === 'json'
   const toolPage = PAGE_TYPES[page.type].kind !== 'markdown'
@@ -249,39 +247,31 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       run,
       running
     },
-    () => setRun(null)
+    runner.clear
   )
 
+  const { execute } = runner
   const onRun = useCallback(async () => {
     if (page.type !== 'javascript' && page.type !== 'typescript') return
-    setPageRunning(page.id, true)
-    try {
-      setRun(
-        await api.run.execute({
-          language: page.type,
-          source,
-          spaceId: page.spaceId,
-          pageId: blockRef?.pageId ?? page.id
-        })
-      )
-    } finally {
-      setPageRunning(page.id, false)
-    }
-  }, [blockRef?.pageId, page.id, page.spaceId, page.type, setPageRunning, source])
+    await execute({
+      language: page.type,
+      source,
+      spaceId: page.spaceId,
+      pageId: blockRef?.pageId ?? page.id
+    })
+  }, [blockRef?.pageId, execute, page.id, page.spaceId, page.type, source])
+
+  useEffect(() => () => clearRunDraft(page.id), [page.id])
 
   return (
     <article
       className="accent-select flex h-full min-h-0 flex-col select-text"
       style={{ '--page-accent': ICON_ACCENT[page.iconColor] } as React.CSSProperties}
     >
-      <header
-        className={cn(
-          'group shrink-0',
-          toolPage ? 'px-6 pt-6 pb-3' : 'mx-auto w-full max-w-3xl px-10 pt-10 pb-4'
-        )}
-      >
-        <div className="mb-3 flex items-center gap-3">
-          {locked || blockRef ? (
+      <PageHeader
+        wide={toolPage}
+        icon={
+          locked || blockRef ? (
             <IconBadge icon={page.icon} color={page.iconColor} className="size-9" />
           ) : (
             <IconPicker
@@ -290,30 +280,30 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               size="lg"
               onChange={(appearance) => void updatePageAppearance(page.id, appearance)}
             />
-          )}
-          {blockRef ? (
-            <div className="min-w-0 flex-1">
-              <button
-                type="button"
-                className="mb-1 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
-                onClick={() => void selectPage(blockRef.pageId, page.spaceId)}
-              >
-                <ArrowLeft className="size-3.5" />
-                {parentPage?.title || 'Back'}
-              </button>
-              <h1 className="w-full truncate text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
-                {page.title}
-              </h1>
-            </div>
-          ) : locked ? (
-            <h1 className="min-w-0 flex-1 text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
+          )
+        }
+        breadcrumb={
+          blockRef ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+              onClick={() => void selectPage(blockRef.pageId, page.spaceId)}
+            >
+              <ArrowLeft className="size-3.5" />
+              {parentPage?.title || 'Back'}
+            </button>
+          ) : null
+        }
+        title={
+          blockRef || locked ? (
+            <h1 className="w-full truncate text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em]">
               {page.title}
             </h1>
           ) : (
             <input
               value={title}
               aria-label="Page title"
-              className="min-w-0 flex-1 bg-transparent text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em] outline-none placeholder:text-muted-foreground/70"
+              className="w-full min-w-0 bg-transparent text-[2.2rem] leading-[1.15] font-semibold tracking-[-0.04em] outline-none placeholder:text-muted-foreground/70"
               placeholder="Untitled"
               onChange={(event) => setTitle(event.target.value)}
               onBlur={() => {
@@ -326,49 +316,21 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                 event.currentTarget.blur()
               }}
             />
-          )}
-          {blockRef || isGuidePageId(page.id) ? null : <PageActions page={page} />}
-        </div>
-        {toolPage && !blockRef ? (
-          <div className="mt-1 flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <DescriptionField
-                content={page.description}
-                onChange={(description) => saveDescription(description)}
-              />
-            </div>
-            {isCode ? (
-              <div className="flex shrink-0 items-center gap-2">
-                <Segmented
-                  value={page.type}
-                  options={[
-                    { id: 'javascript', label: 'JavaScript' },
-                    { id: 'typescript', label: 'TypeScript' }
-                  ]}
-                  onChange={(id) => void changePageType(page.id, id)}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  className={cn('shadow-none', RUN_ACCENT[page.iconColor])}
-                  onClick={() => void onRun()}
-                  disabled={running}
-                >
-                  {running ? <Spinner className="size-3.5" /> : <Play />}
-                  {running ? 'Running' : 'Run'}
-                  <KbdGroup className="ml-1 opacity-80">
-                    <Kbd className="bg-current/15 text-current">{modSymbol()}</Kbd>
-                    <Kbd className="bg-current/15 text-current">↵</Kbd>
-                  </KbdGroup>
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </header>
+          )
+        }
+        actions={blockRef || isGuidePageId(page.id) ? null : <PageActions page={page} />}
+        state={
+          toolPage && !blockRef ? (
+            <DescriptionField
+              content={page.description}
+              onChange={(description) => saveDescription(description)}
+            />
+          ) : null
+        }
+      />
 
       {page.type === 'markdown' ? (
-        <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-auto px-10 pr-12 pb-8">
+        <div className="min-h-0 w-full max-w-3xl flex-1 overflow-auto px-10 pr-12 pb-8">
           <MarkdownEditor
             content={page.content}
             restoreFocus={active && preserveEditorFocus}
@@ -467,40 +429,29 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
 
       {isCode ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          {blockRef ? (
-            <EditorBar
-              type={page.type === 'typescript' ? 'typescript' : 'javascript'}
-              className="border-t"
-            >
-              <Segmented
-                value={page.type === 'typescript' ? 'typescript' : 'javascript'}
-                options={[
-                  { id: 'javascript', label: 'JavaScript' },
-                  { id: 'typescript', label: 'TypeScript' }
-                ]}
-                disabled={isGuidePageId(blockRef.pageId)}
-                onChange={(id) =>
-                  void saveBlockContent(blockRef.pageId, blockRef.blockId, { language: id })
-                }
-              />
-              <Button
-                type="button"
-                size="sm"
-                className={cn('shadow-none', RUN_ACCENT[page.iconColor])}
-                onClick={() => void onRun()}
-                disabled={running}
-              >
-                {running ? <Spinner className="size-3.5" /> : <Play />}
-                {running ? 'Running' : 'Run'}
-              </Button>
-            </EditorBar>
-          ) : null}
-          <div
-            className={cn(
-              'min-h-0 flex-1 overflow-hidden',
-              blockRef ? null : 'border-t border-border/60'
-            )}
-          >
+          <EditorBar type={language} className="border-t">
+            <Segmented
+              label="Language"
+              value={language}
+              options={[
+                { id: 'javascript', label: 'JavaScript' },
+                { id: 'typescript', label: 'TypeScript' }
+              ]}
+              disabled={blockRef ? isGuidePageId(blockRef.pageId) : locked}
+              onChange={(id) =>
+                void (blockRef
+                  ? saveBlockContent(blockRef.pageId, blockRef.blockId, { language: id })
+                  : changePageType(page.id, id))
+              }
+            />
+            <RunButton
+              accent={page.iconColor}
+              running={running}
+              shortcut
+              onRun={() => void onRun()}
+            />
+          </EditorBar>
+          <div className="min-h-0 flex-1 overflow-hidden">
             <CodeEditor
               active={active}
               accent={page.iconColor}
@@ -508,9 +459,10 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               onRun={() => void onRun()}
               value={source}
               readOnly={Boolean(blockRef && isGuidePageId(blockRef.pageId)) || page.locked}
-              language={page.type === 'typescript' ? 'typescript' : 'javascript'}
+              language={language}
               onChange={(content) => {
                 setSource(content)
+                if (!blockRef) setRunDraft(page.id, content)
                 saveContent(content)
               }}
             />
@@ -587,7 +539,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                       size="icon"
                       className="size-6 text-muted-foreground [&_svg]:size-3.5"
                       aria-label="Clear output"
-                      onClick={() => setRun(null)}
+                      onClick={runner.clear}
                     >
                       <Eraser />
                     </Button>

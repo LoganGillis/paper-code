@@ -1,24 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import {
-  ClipboardPaste,
-  FileCode2,
-  FileJson,
-  FileSpreadsheet,
-  FileText,
-  House,
-  Pin,
-  Plus,
-  X
-} from 'lucide-react'
+import { House, Pin, Plus, X } from 'lucide-react'
 import type { Page, PageSummary, SpaceTree } from '@shared/api'
 import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
+import { NewMenuItems } from '@/components/new-menu-items'
 import { TypeBadge } from '@/components/type-badge'
 import { Spinner } from '@/components/ui/spinner'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { isDeskPageId } from '@/lib/desk'
@@ -256,82 +246,22 @@ export function TabBar(): React.JSX.Element {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuItem
-            onSelect={() => {
+          <NewMenuItems
+            menu="dropdown"
+            onCreate={(type) => {
               const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void createPage(host, 'markdown', defaultPageTitle('markdown'), undefined, {
-                newTab: true
-              })
+              if (host)
+                void createPage(host, type, defaultPageTitle(type), undefined, { newTab: true })
             }}
-          >
-            <FileText className="size-3.5" />
-            New page
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
+            onPasteJson={() => {
               const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void createPage(host, 'javascript', defaultPageTitle('javascript'), undefined, {
-                newTab: true
-              })
+              if (host) void pasteJsonFromClipboard(host, { newTab: true })
             }}
-          >
-            <FileCode2 className="size-3.5" />
-            New JavaScript
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
+            onOpenFile={() => {
               const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void createPage(host, 'typescript', defaultPageTitle('typescript'), undefined, {
-                newTab: true
-              })
+              if (host) void importCsv(host, { newTab: true })
             }}
-          >
-            <FileCode2 className="size-3.5" />
-            New TypeScript
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void createPage(host, 'csv', defaultPageTitle('csv'), undefined, { newTab: true })
-            }}
-          >
-            <FileSpreadsheet className="size-3.5" />
-            New CSV
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void createPage(host, 'json', defaultPageTitle('json'), undefined, { newTab: true })
-            }}
-          >
-            <FileJson className="size-3.5" />
-            New JSON
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void pasteJsonFromClipboard(host, { newTab: true })
-            }}
-          >
-            <ClipboardPaste className="size-3.5" />
-            JSON from clipboard
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              const host = spaceId ?? spaces[0]?.id
-              if (!host) return
-              void importCsv(host, { newTab: true })
-            }}
-          >
-            <FileSpreadsheet className="size-3.5" />
-            Open CSV
-          </DropdownMenuItem>
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

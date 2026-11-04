@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
-import { PanelBottom, Play, SquareArrowOutUpRight } from 'lucide-react'
+import { PanelBottom, SquareArrowOutUpRight } from 'lucide-react'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { ReactNodeViewProps } from '@tiptap/react'
 
-import type { RunResult } from '@shared/api'
 import { displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
 import { PagePickList } from '@/components/page-picker'
@@ -15,10 +14,11 @@ import { Input } from '@/components/ui/input'
 import { api } from '@/lib/rpc'
 import { filterPageHits, findPageHit } from '@/lib/pages'
 import { getRunContext } from '@/lib/run-context'
-import { RUN_ACCENT } from '@/lib/run-accent'
-import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 import { usePopoutOutput } from '@/lib/output-popout'
+import { RunButton } from '@/components/run-button'
+import { runSourceFor } from '@/lib/run-drafts'
+import { useRunPage } from '@/lib/run-page'
 
 export const ScriptRun = Node.create({
   name: 'scriptRun',
@@ -51,11 +51,10 @@ export const ScriptRun = Node.create({
 })
 
 function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): React.JSX.Element {
-  const { trees, pagesById, setPageRunning, runningPageIds } = useWorkspace()
+  const { trees, pagesById } = useWorkspace()
   const canEdit = editor.isEditable
   const [query, setQuery] = useState('')
   const [picking, setPicking] = useState(false)
-  const [run, setRun] = useState<RunResult | null>(null)
   const pageId = String(node.attrs.pageId || '')
   const hit = findPageHit(trees, pageId)
   const script = hit?.page.type === 'javascript' || hit?.page.type === 'typescript' ? hit : null
@@ -65,7 +64,7 @@ function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): 
   )
   const host = getRunContext(editor)
   const accent = pagesById[host.pageId]?.iconColor ?? script?.page.iconColor ?? 'slate'
-  const running = Boolean(pageId && runningPageIds.includes(pageId))
+  const { run, running, clear, execute } = useRunPage({ tabId: pageId, shared: true })
 
   const output = usePopoutOutput(
     {
@@ -75,26 +74,21 @@ function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): 
       run,
       running
     },
-    () => setRun(null)
+    clear
   )
 
   const onRun = useCallback(async () => {
     if (!script) return
-    const full = pagesById[script.page.id] ?? (await api.pages.get({ id: script.page.id }))
-    setPageRunning(full.id, true)
-    try {
-      setRun(
-        await api.run.execute({
-          language: full.type === 'typescript' ? 'typescript' : 'javascript',
-          source: full.content,
-          spaceId: full.spaceId,
-          pageId: full.id
-        })
-      )
-    } finally {
-      setPageRunning(full.id, false)
-    }
-  }, [pagesById, script, setPageRunning])
+    await execute(async () => {
+      const full = pagesById[script.page.id] ?? (await api.pages.get({ id: script.page.id }))
+      return {
+        language: full.type === 'typescript' ? 'typescript' : 'javascript',
+        source: runSourceFor(full.id, full.content),
+        spaceId: full.spaceId,
+        pageId: full.id
+      }
+    })
+  }, [execute, pagesById, script])
 
   return (
     <NodeViewWrapper className="paper-script-run my-4 overflow-hidden rounded-lg border border-border/70">
@@ -120,16 +114,7 @@ function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): 
             >
               <SquareArrowOutUpRight />
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className={cn('h-7 shadow-none', RUN_ACCENT[accent])}
-              disabled={running}
-              onClick={() => void onRun()}
-            >
-              <Play />
-              {running ? 'Running' : 'Run'}
-            </Button>
+            <RunButton accent={accent} running={running} onRun={() => void onRun()} />
           </>
         ) : (
           <p className="px-1 text-sm text-muted-foreground">Choose a script to run.</p>

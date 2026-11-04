@@ -1,8 +1,10 @@
 import type { PageType } from '@shared/api'
 import { Button } from '@/components/ui/button'
 import { TypeBadge } from '@/components/type-badge'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 
+/** The bar above every editor: type badge on the left, Run and toggles on the right. */
 export function EditorBar({
   type,
   children,
@@ -40,11 +42,13 @@ export function EditorBarButton({
   )
 }
 
+/** A single-choice ShadCN ToggleGroup for editor bars (language, table/chart, view toggles). */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
-  disabled
+  disabled,
+  label
 }: {
   value: T
   options: ReadonlyArray<{
@@ -54,27 +58,27 @@ export function Segmented<T extends string>({
   }>
   onChange: (id: T) => void
   disabled?: boolean
+  label?: string
 }): React.JSX.Element {
   return (
-    <div className="flex rounded-md bg-sidebar p-0.5">
+    <ToggleGroup
+      type="single"
+      value={value}
+      disabled={disabled}
+      aria-label={label}
+      onValueChange={(next) => {
+        if (next && next !== value) onChange(next as T)
+      }}
+    >
       {options.map((item) => {
         const Icon = item.icon
-        const selected = value === item.id
         return (
-          <EditorBarButton
-            key={item.id}
-            disabled={disabled}
-            className={cn(selected && 'bg-paper text-foreground shadow-sm')}
-            onClick={() => {
-              if (selected) return
-              onChange(item.id)
-            }}
-          >
+          <ToggleGroupItem key={item.id} value={item.id}>
             {Icon ? <Icon className="size-3.5" /> : null}
             {item.label}
-          </EditorBarButton>
+          </ToggleGroupItem>
         )
       })}
-    </div>
+    </ToggleGroup>
   )
 }

@@ -2,19 +2,18 @@ import { useCallback, useState } from 'react'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { ReactNodeViewProps } from '@tiptap/react'
-import { Maximize2, PanelBottom, Play, SquareArrowOutUpRight } from 'lucide-react'
-import type { RunResult } from '@shared/api'
+import { Maximize2, PanelBottom, SquareArrowOutUpRight } from 'lucide-react'
 import { CodeEditor } from '@/components/code-editor'
 import { Button } from '@/components/ui/button'
-import { api } from '@/lib/rpc'
-import { RUN_ACCENT } from '@/lib/run-accent'
 import { newBlockId } from '@/lib/run-block'
 import { getRunContext } from '@/lib/run-context'
-import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 import { RunOutput } from '@/components/run-output'
 import { wantsNewTab } from '@/lib/platform'
 import { usePopoutOutput } from '@/lib/output-popout'
+import { RunButton } from '@/components/run-button'
+import { Segmented } from '@/components/editor-bar'
+import { useRunPage } from '@/lib/run-page'
 
 export const RunnableCode = Node.create({
   name: 'runnableCode',
@@ -69,10 +68,9 @@ function RunnableCodeView({
 }: ReactNodeViewProps): React.JSX.Element {
   const language = node.attrs.language === 'typescript' ? 'typescript' : 'javascript'
   const canEdit = editor.isEditable
-  const [run, setRun] = useState<RunResult | null>(null)
-  const [running, setRunning] = useState(false)
   const paper = getRunContext(editor)
   const pageId = paper.pageId
+  const { run, running, clear, execute } = useRunPage({ tabId: pageId })
   const spaceId = paper.spaceId
   const { pagesById, openRunBlock } = useWorkspace()
   const accent = pagesById[pageId]?.iconColor ?? 'slate'
@@ -111,25 +109,13 @@ function RunnableCodeView({
       run,
       running
     },
-    () => setRun(null)
+    clear
   )
 
   const onRun = useCallback(async () => {
     if (!pageId || !spaceId) return
-    setRunning(true)
-    try {
-      setRun(
-        await api.run.execute({
-          language,
-          source: node.textContent,
-          spaceId,
-          pageId
-        })
-      )
-    } finally {
-      setRunning(false)
-    }
-  }, [language, node.textContent, pageId, spaceId])
+    await execute({ language, source: node.textContent, spaceId, pageId })
+  }, [execute, language, node.textContent, pageId, spaceId])
 
   return (
     <NodeViewWrapper className="paper-run-block my-4 overflow-hidden rounded-lg border border-border/70">
@@ -138,23 +124,15 @@ function RunnableCodeView({
         contentEditable={false}
       >
         {canEdit ? (
-          <div className="flex rounded-sm bg-sidebar p-0.5">
-            {(['javascript', 'typescript'] as const).map((id) => (
-              <Button
-                key={id}
-                type="button"
-                size="sm"
-                variant="ghost"
-                className={cn(
-                  'h-6 rounded-sm px-2 text-[11px]',
-                  language === id && 'bg-paper text-foreground shadow-sm'
-                )}
-                onClick={() => updateAttributes({ language: id })}
-              >
-                {id === 'javascript' ? 'JavaScript' : 'TypeScript'}
-              </Button>
-            ))}
-          </div>
+          <Segmented
+            label="Language"
+            value={language}
+            options={[
+              { id: 'javascript', label: 'JavaScript' },
+              { id: 'typescript', label: 'TypeScript' }
+            ]}
+            onChange={(id) => updateAttributes({ language: id })}
+          />
         ) : null}
         <div className="ml-auto flex items-center gap-1">
           {pageId && spaceId ? (
@@ -183,16 +161,12 @@ function RunnableCodeView({
           >
             <SquareArrowOutUpRight />
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            className={cn('h-7 shadow-none', RUN_ACCENT[accent])}
-            disabled={running || !source.trim()}
-            onClick={() => void onRun()}
-          >
-            <Play />
-            {running ? 'Running' : 'Run'}
-          </Button>
+          <RunButton
+            accent={accent}
+            running={running}
+            disabled={!source.trim()}
+            onRun={() => void onRun()}
+          />
         </div>
       </div>
       <div className="bg-sidebar/40" contentEditable={false}>

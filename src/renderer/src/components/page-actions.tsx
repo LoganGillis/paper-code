@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useWorkspace } from '@/lib/workspace'
 import { RunOutput } from '@/components/run-output'
+import { EmptyState } from '@/components/empty-state'
 
 export function PageActions({ page }: { page: Page }): React.JSX.Element | null {
   const {
@@ -136,7 +137,7 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
           </DialogHeader>
           <div className="mt-3 max-h-[60vh] overflow-auto">
             {versions.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">No snapshots yet.</p>
+              <EmptyState className="py-8">No snapshots yet.</EmptyState>
             ) : (
               versions.map((version) => (
                 <div
@@ -175,9 +176,7 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
             <DialogDescription>Pick a run to see its source and output.</DialogDescription>
           </DialogHeader>
           {runs.length === 0 ? (
-            <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              No runs yet.
-            </p>
+            <EmptyState>No runs yet.</EmptyState>
           ) : (
             <div className="flex min-h-0 flex-1">
               <aside className="w-52 shrink-0 overflow-auto border-r border-border/60">

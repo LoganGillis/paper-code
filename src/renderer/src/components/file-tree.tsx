@@ -4,13 +4,7 @@ import {
   ChevronRight,
   Copy,
   CopyPlus,
-  ClipboardPaste,
-  FileCode2,
-  FileJson,
-  FileSpreadsheet,
-  FileText,
   Folder,
-  FolderPlus,
   KeyRound,
   Plus,
   Columns2,
@@ -24,15 +18,9 @@ import { cn } from '@/lib/utils'
 import { EditableLabel } from '@/components/editable-label'
 import { IconPicker } from '@/components/icon-picker'
 import { ItemMenu } from '@/components/item-menu'
+import { NewMenuItems } from '@/components/new-menu-items'
+import { useConfirm } from '@/lib/confirm'
 import { SecretsDialog } from '@/components/secrets-dialog'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import {
@@ -45,12 +33,12 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/rpc'
 import { wantsNewTab } from '@/lib/platform'
 import { useWorkspace } from '@/lib/workspace'
+import { EmptyState } from '@/components/empty-state'
 
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value)
@@ -82,6 +70,15 @@ function PageRow({
     showTrash,
     runningPageIds
   } = useWorkspace()
+  const confirm = useConfirm()
+  const purge = async (): Promise<void> => {
+    const ok = await confirm({
+      title: 'Delete this page forever?',
+      description: `${displayTitle(page.title)} will be removed for good. This cannot be undone.`,
+      confirmLabel: 'Delete forever'
+    })
+    if (ok) await purgePage(page.id)
+  }
   const active = selected?.id === page.id
   const [dropEdge, setDropEdge] = useState<'before' | 'after' | null>(null)
 
@@ -142,8 +139,10 @@ function PageRow({
           className={cn(
             'group relative flex h-9 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
             active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70',
-            dropEdge === 'before' && 'before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-foreground/50 before:content-[""]',
-            dropEdge === 'after' && 'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground/50 after:content-[""]'
+            dropEdge === 'before' &&
+              'before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-foreground/50 before:content-[""]',
+            dropEdge === 'after' &&
+              'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground/50 after:content-[""]'
           )}
           style={{ paddingLeft: 10 + depth * 12 }}
         >
@@ -194,9 +193,11 @@ function PageRow({
                 onArchive={
                   page.archived || page.deletedAt ? undefined : () => void archivePage(page.id)
                 }
-                onUnarchive={page.archived && !page.deletedAt ? () => void unarchivePage(page.id) : undefined}
+                onUnarchive={
+                  page.archived && !page.deletedAt ? () => void unarchivePage(page.id) : undefined
+                }
                 onRestore={page.deletedAt ? () => void restorePage(page.id) : undefined}
-                onDelete={() => (showTrash ? void purgePage(page.id) : void deletePage(page.id))}
+                onDelete={() => (showTrash ? void purge() : void deletePage(page.id))}
               />
             </div>
           </div>
@@ -242,7 +243,7 @@ function PageRow({
         )}
         <ContextMenuItem
           className="text-destructive focus:text-destructive"
-          onSelect={() => (showTrash ? void purgePage(page.id) : void deletePage(page.id))}
+          onSelect={() => (showTrash ? void purge() : void deletePage(page.id))}
         >
           <Trash2 className="size-3.5" />
           {showTrash ? 'Delete forever' : 'Move to trash'}
@@ -271,6 +272,15 @@ function FolderRow({
     moveFolder,
     movePage
   } = useWorkspace()
+  const confirm = useConfirm()
+  const removeFolder = async (): Promise<void> => {
+    const ok = await confirm({
+      title: 'Move this folder to the trash?',
+      description: `${folder.name} and every page inside it will move to the trash.`,
+      confirmLabel: 'Move to trash'
+    })
+    if (ok) await deleteFolder(folder.id)
+  }
   const [open, setOpen] = useState(true)
   const active = activeFolderId === folder.id
 
@@ -346,7 +356,7 @@ function FolderRow({
                   className="opacity-100"
                   onDuplicate={() => void duplicateFolder(folder.id)}
                   onCopy={() => void copyText(folder.name)}
-                  onDelete={() => void deleteFolder(folder.id)}
+                  onDelete={() => void removeFolder()}
                 />
               </div>
             </div>
@@ -364,7 +374,7 @@ function FolderRow({
           <ContextMenuSeparator />
           <ContextMenuItem
             className="text-destructive focus:text-destructive"
-            onSelect={() => void deleteFolder(folder.id)}
+            onSelect={() => void removeFolder()}
           >
             <Trash2 className="size-3.5" />
             Delete
@@ -401,9 +411,7 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
     return (
       <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
         {trashed.length === 0 ? (
-          <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
-            Nothing in the trash.
-          </p>
+          <EmptyState size="xs">Nothing in the trash.</EmptyState>
         ) : (
           trashed.map((page) => (
             <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
@@ -417,9 +425,7 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
     return (
       <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
         {archived.length === 0 ? (
-          <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
-            Nothing archived here.
-          </p>
+          <EmptyState size="xs">Nothing archived here.</EmptyState>
         ) : (
           archived.map((page) => (
             <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
@@ -467,7 +473,15 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
     movePage,
     moveFolder
   } = useWorkspace()
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const confirm = useConfirm()
+  const removeSpace = async (): Promise<void> => {
+    const ok = await confirm({
+      title: 'Delete this space?',
+      description: `${tree.space.name} and every folder and page inside it will be removed. This cannot be undone.`,
+      confirmLabel: 'Delete space'
+    })
+    if (ok) await deleteSpace(tree.space.id)
+  }
   const [secretsOpen, setSecretsOpen] = useState(false)
   const open = openSpaceIds.includes(tree.space.id)
 
@@ -514,111 +528,31 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() =>
-                    void createPage(tree.space.id, 'markdown', defaultPageTitle('markdown'))
-                  }
-                >
-                  <FileText className="size-3.5" />
-                  New page
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    void createPage(tree.space.id, 'javascript', defaultPageTitle('javascript'))
-                  }
-                >
-                  <FileCode2 className="size-3.5" />
-                  New JavaScript
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    void createPage(tree.space.id, 'typescript', defaultPageTitle('typescript'))
-                  }
-                >
-                  <FileCode2 className="size-3.5" />
-                  New TypeScript
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => void createPage(tree.space.id, 'csv', defaultPageTitle('csv'))}
-                >
-                  <FileSpreadsheet className="size-3.5" />
-                  New CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => void createPage(tree.space.id, 'json', defaultPageTitle('json'))}
-                >
-                  <FileJson className="size-3.5" />
-                  New JSON
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void pasteJsonFromClipboard(tree.space.id)}>
-                  <ClipboardPaste className="size-3.5" />
-                  JSON from clipboard
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void importCsv(tree.space.id)}>
-                  <FileSpreadsheet className="size-3.5" />
-                  Open CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => void createFolder(tree.space.id, 'Untitled folder')}
-                >
-                  <FolderPlus className="size-3.5" />
-                  New folder
-                </DropdownMenuItem>
+                <NewMenuItems
+                  menu="dropdown"
+                  onCreate={(type) => void createPage(tree.space.id, type, defaultPageTitle(type))}
+                  onPasteJson={() => void pasteJsonFromClipboard(tree.space.id)}
+                  onOpenFile={() => void importCsv(tree.space.id)}
+                  onNewFolder={() => void createFolder(tree.space.id, 'Untitled folder')}
+                />
               </DropdownMenuContent>
             </DropdownMenu>
             <ItemMenu
               onSecrets={() => setSecretsOpen(true)}
               onDuplicate={() => void duplicateSpace(tree.space.id)}
               onCopy={() => void copyText(tree.space.name)}
-              onDelete={() => setConfirmDelete(true)}
+              onDelete={() => void removeSpace()}
             />
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
-          <ContextMenuItem
-            onSelect={() =>
-              void createPage(tree.space.id, 'markdown', defaultPageTitle('markdown'))
-            }
-          >
-            <FileText className="size-3.5" />
-            New page
-          </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() =>
-              void createPage(tree.space.id, 'javascript', defaultPageTitle('javascript'))
-            }
-          >
-            <FileCode2 className="size-3.5" />
-            New JavaScript
-          </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() =>
-              void createPage(tree.space.id, 'typescript', defaultPageTitle('typescript'))
-            }
-          >
-            <FileCode2 className="size-3.5" />
-            New TypeScript
-          </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() => void createPage(tree.space.id, 'csv', defaultPageTitle('csv'))}
-          >
-            <FileSpreadsheet className="size-3.5" />
-            New CSV
-          </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() => void createPage(tree.space.id, 'json', defaultPageTitle('json'))}
-          >
-            <FileJson className="size-3.5" />
-            New JSON
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void pasteJsonFromClipboard(tree.space.id)}>
-            <ClipboardPaste className="size-3.5" />
-            JSON from clipboard
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void createFolder(tree.space.id, 'Untitled folder')}>
-            <FolderPlus className="size-3.5" />
-            New folder
-          </ContextMenuItem>
+          <NewMenuItems
+            menu="context"
+            onCreate={(type) => void createPage(tree.space.id, type, defaultPageTitle(type))}
+            onPasteJson={() => void pasteJsonFromClipboard(tree.space.id)}
+            onOpenFile={() => void importCsv(tree.space.id)}
+            onNewFolder={() => void createFolder(tree.space.id, 'Untitled folder')}
+          />
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => setSecretsOpen(true)}>
             <KeyRound className="size-3.5" />
@@ -640,7 +574,7 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
           <ContextMenuSeparator />
           <ContextMenuItem
             className="text-destructive focus:text-destructive"
-            onSelect={() => setConfirmDelete(true)}
+            onSelect={() => void removeSpace()}
           >
             <Trash2 className="size-3.5" />
             Delete
@@ -682,33 +616,6 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
       </div>
 
       <SecretsDialog space={tree.space} open={secretsOpen} onOpenChange={setSecretsOpen} />
-
-      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete this space?</DialogTitle>
-            <DialogDescription>
-              {tree.space.name} and every folder and page inside it will be removed. This cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                setConfirmDelete(false)
-                void deleteSpace(tree.space.id)
-              }}
-            >
-              Delete space
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </section>
   )
 }

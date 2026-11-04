@@ -15,10 +15,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import { useConfirm } from '@/lib/confirm'
 import { api } from '@/lib/rpc'
 import { RUN_ACCENT } from '@/lib/run-accent'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
+import { EmptyState } from '@/components/empty-state'
 
 function formatUpdated(iso: string): string {
   const date = new Date(iso)
@@ -90,7 +92,7 @@ export function SecretsDialog({
   const [value, setValue] = useState('')
   const [replaceValue, setReplaceValue] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const confirm = useConfirm()
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -102,7 +104,6 @@ export function SecretsDialog({
       setValue('')
       setReplaceValue('')
       setError(null)
-      setConfirmDelete(false)
       setCopied(false)
       setSelection('new')
       return
@@ -131,7 +132,6 @@ export function SecretsDialog({
     setKeyName('')
     setValue('')
     setReplaceValue('')
-    setConfirmDelete(false)
     setError(null)
   }
 
@@ -172,6 +172,12 @@ export function SecretsDialog({
 
   async function onDelete(): Promise<void> {
     if (!selected || busy) return
+    const ok = await confirm({
+      title: `Delete ${selected.key}?`,
+      description: 'Scripts using this secret will fail. This cannot be undone.',
+      confirmLabel: 'Delete secret'
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
@@ -180,7 +186,6 @@ export function SecretsDialog({
       const remaining = secrets.filter((item) => item.id !== id)
       setSecrets(remaining)
       setSelection(remaining[0]?.id ?? 'new')
-      setConfirmDelete(false)
       setReplaceValue('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not delete secret')
@@ -250,9 +255,7 @@ export function SecretsDialog({
             <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col gap-0.5 px-2 pb-2">
                 {secrets.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-[12px] text-muted-foreground">
-                    No keys in this space yet.
-                  </p>
+                  <EmptyState size="xs">No keys in this space yet.</EmptyState>
                 ) : (
                   secrets.map((secret) => {
                     const active = secret.id === selection
@@ -267,7 +270,6 @@ export function SecretsDialog({
                         onClick={() => {
                           setSelection(secret.id)
                           setReplaceValue('')
-                          setConfirmDelete(false)
                           setError(null)
                           setCopied(false)
                         }}
@@ -378,44 +380,16 @@ export function SecretsDialog({
                 {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
 
                 <div className="mt-auto border-t border-border/70 pt-3">
-                  {confirmDelete ? (
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[13px] text-muted-foreground">
-                        Delete {selected.key}? Scripts using it will fail.
-                      </p>
-                      <div className="flex shrink-0 gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-8"
-                          onClick={() => setConfirmDelete(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          className="h-8"
-                          disabled={busy}
-                          onClick={() => void onDelete()}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => setConfirmDelete(true)}
-                    >
-                      Delete secret
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-muted-foreground hover:text-destructive"
+                    disabled={busy}
+                    onClick={() => void onDelete()}
+                  >
+                    Delete secret
+                  </Button>
                 </div>
               </div>
             )}
