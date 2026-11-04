@@ -922,7 +922,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const restorePage = useCallback(
     async (id: string) => {
-      const updated = await api.pages.restore({ id })
+      let updated: Page
+      try {
+        updated = await api.pages.restore({ id })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not restore the page'))
+        return
+      }
       storePage(updated)
       await refreshTree(updated.spaceId)
     },

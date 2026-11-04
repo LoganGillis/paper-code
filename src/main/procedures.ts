@@ -35,6 +35,7 @@ import {
   assertEditable,
   assertNotLocked,
   assertTypeChange,
+  assertFolderMove,
   folderSubtree,
   trashFolderTree,
   uniqueTitle
@@ -473,7 +474,8 @@ export const procedures: AppApi = {
       await getPrisma().$transaction(async (tx) => {
         const space = await tx.space.findUniqueOrThrow({ where: { id: data.id } })
         const locked = await tx.page.findFirst({
-          where: { spaceId: space.id, locked: true, deletedAt: null },
+          // Trash included: locked pages are never purged, so they never go with a space either.
+          where: { spaceId: space.id, locked: true },
           select: { title: true }
         })
         if (locked) throw new Error(lockedInSpaceMessage(space.name, locked.title))
@@ -632,9 +634,8 @@ export const procedures: AppApi = {
       await getPrisma().$transaction(async (tx) => {
         const folder = await tx.folder.findUniqueOrThrow({ where: { id: data.id } })
         const parentId = data.parentId === undefined ? folder.parentId : data.parentId
-        if (parentId === folder.id) throw new Error('A folder cannot go inside itself.')
         if (parentId !== folder.parentId) {
-          const all = await tx.folder.findMany({ where: { spaceId: folder.spaceId } })
+          const all = await assertFolderMove(tx, folder, parentId)
           const locked = await tx.page.findFirst({
             where: {
               folderId: { in: folderSubtree(all, folder.id) },
@@ -799,6 +800,10 @@ export const procedures: AppApi = {
     },
     restore: async (input) => {
       const data = idInput.parse(input)
+      assertNotLocked(
+        await getPrisma().page.findUniqueOrThrow({ where: { id: data.id } }),
+        'restore'
+      )
       const page = await getPrisma().page.update({
         where: { id: data.id },
         data: { deletedAt: null }

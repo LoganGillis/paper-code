@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '../generated/prisma/client'
 import { applySqlMigrations, sqliteFileUrl } from './migrate'
-import { trashFolderTree } from './page-rules'
+import { assertFolderMove, trashFolderTree } from './page-rules'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../prisma/migrations')
 
@@ -127,6 +127,42 @@ test('a locked page already in the trash does not stop its old folder being dele
     assert.equal(old.locked, true)
     const moved = await prisma.page.findUniqueOrThrow({ where: { id: free.id } })
     assert.ok(moved.deletedAt, 'the free page is trashed with the folder')
+  } finally {
+    await prisma.$disconnect()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a folder cannot move into itself, a subfolder, or another space', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'paper-folder-move-'))
+  const databasePath = join(dir, 'app.db')
+  applySqlMigrations(databasePath, [migrationsDir])
+  const prisma = new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url: sqliteFileUrl(databasePath) })
+  })
+  try {
+    const space = await prisma.space.create({ data: { name: 'Workshop' } })
+    const other = await prisma.space.create({ data: { name: 'Other' } })
+    const top = await prisma.folder.create({ data: { name: 'Top', spaceId: space.id } })
+    const child = await prisma.folder.create({
+      data: { name: 'Child', spaceId: space.id, parentId: top.id }
+    })
+    const grandchild = await prisma.folder.create({
+      data: { name: 'Grandchild', spaceId: space.id, parentId: child.id }
+    })
+    const sibling = await prisma.folder.create({ data: { name: 'Sibling', spaceId: space.id } })
+    const elsewhere = await prisma.folder.create({ data: { name: 'Away', spaceId: other.id } })
+
+    const move = (parentId: string | null): Promise<unknown> =>
+      prisma.$transaction((tx) => assertFolderMove(tx, top, parentId))
+    await assert.rejects(move(top.id), /cannot go inside itself/)
+    await assert.rejects(move(child.id), /one of its own subfolders/)
+    await assert.rejects(move(grandchild.id), /one of its own subfolders/)
+    await assert.rejects(move(elsewhere.id), /same space/)
+    await assert.rejects(move('missing'), /same space/)
+    await move(sibling.id)
+    await move(null)
+    await prisma.$transaction((tx) => assertFolderMove(tx, grandchild, top.id))
   } finally {
     await prisma.$disconnect()
     rmSync(dir, { recursive: true, force: true })

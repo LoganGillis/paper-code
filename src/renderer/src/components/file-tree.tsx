@@ -23,6 +23,7 @@ import { NewMenuItems } from '@/components/new-menu-items'
 import { useConfirm } from '@/lib/confirm'
 import { LockHint } from '@/components/lock-hint'
 import { firstLockedPage } from '@/lib/tree-locks'
+import { DELETE_SPACE_LABEL, deleteSpaceConfirm } from '@/lib/space-delete'
 import { lockHint } from '@shared/locks'
 import { SecretsDialog } from '@/components/secrets-dialog'
 import { Button } from '@/components/ui/button'
@@ -540,11 +541,7 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
   } = useWorkspace()
   const confirm = useConfirm()
   const removeSpace = async (): Promise<void> => {
-    const ok = await confirm({
-      title: 'Delete this space?',
-      description: `${tree.space.name} and every folder and page inside it will be removed. This cannot be undone.`,
-      confirmLabel: 'Delete space'
-    })
+    const ok = await confirm(deleteSpaceConfirm(tree))
     if (ok) await deleteSpace(tree.space.id)
   }
   const [secretsOpen, setSecretsOpen] = useState(false)
@@ -607,6 +604,7 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
               onDuplicate={() => void duplicateSpace(tree.space.id)}
               onCopy={() => void copyText(tree.space.name)}
               onDelete={() => void removeSpace()}
+              deleteLabel={DELETE_SPACE_LABEL}
             />
           </div>
         </ContextMenuTrigger>
@@ -642,7 +640,7 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
             onSelect={() => void removeSpace()}
           >
             <Trash2 className="size-3.5" />
-            Delete
+            {DELETE_SPACE_LABEL}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

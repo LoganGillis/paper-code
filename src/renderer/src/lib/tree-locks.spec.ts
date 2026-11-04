@@ -22,6 +22,8 @@ describe('lock wording', () => {
   it('gives a short hint and a friendly error', () => {
     expect(lockHint('delete')).toBe('Unlock to delete')
     expect(lockHint('purge')).toBe('Unlock to delete forever')
+    expect(lockHint('unarchive')).toBe('Unlock to unarchive')
+    expect(lockHint('restore')).toBe('Unlock to restore')
     expect(lockedMessage('Notes', 'move')).toBe('"Notes" is locked. Unlock it to move.')
   })
 })

@@ -27,6 +27,7 @@ export function ItemMenu({
   onRestore,
   onSecrets,
   deleteHint,
+  deleteLabel,
   archiveHint,
   className
 }: {
@@ -41,6 +42,8 @@ export function ItemMenu({
   deleteHint?: string
   /** When set, Archive and Unarchive are disabled and show this reason. */
   archiveHint?: string
+  /** Overrides the delete item's label, e.g. "Delete space…" where nothing goes to the trash. */
+  deleteLabel?: string
   className?: string
 }): React.JSX.Element {
   return (
@@ -105,7 +108,7 @@ export function ItemMenu({
           onSelect={onDelete}
         >
           <Trash2 className="size-3.5" />
-          {onRestore ? 'Delete forever' : 'Move to trash'}
+          {deleteLabel ?? (onRestore ? 'Delete forever' : 'Move to trash')}
           {deleteHint ? <LockHint>{deleteHint}</LockHint> : null}
         </DropdownMenuItem>
       </DropdownMenuContent>

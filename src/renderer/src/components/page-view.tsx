@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorView } from '@codemirror/view'
+import { toast } from 'sonner'
 import {
   ArrowLeft,
   Braces,
@@ -22,6 +23,7 @@ import { EmptyState } from '@/components/empty-state'
 import { CodeEditor } from '@/components/code-editor'
 import { createDebouncer, type DebouncedSave } from '@/lib/debounced-save'
 import { jumpTo, replaceDoc } from '@/lib/editor-jump'
+import { undoWrite } from '@/lib/undo-write'
 import { resolveJsonFormat, resolveJsonPaste } from '@/lib/json-actions'
 import { useJsonPreview } from '@/lib/json-preview'
 import { clearError, errorText, showError, showUndo } from '@/lib/notify'
@@ -124,7 +126,8 @@ function useDebouncedSaver(
   save: (id: string, content: string) => Promise<void>
 ): DebouncedSave {
   const debouncer = useMemo(() => createDebouncer(400), [])
-  useEffect(() => () => debouncer.cancel(), [debouncer, pageId])
+  // Leaving the page (or switching it) saves what is pending instead of dropping it.
+  useEffect(() => () => debouncer.flush(), [debouncer, pageId])
   return Object.assign((content: string) => debouncer.run(() => void save(pageId, content)), {
     cancel: debouncer.cancel
   })
@@ -149,6 +152,10 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
   const jsonViewRef = useRef<EditorView | null>(null)
   const [title, setTitle] = useState(page.title)
   const [source, setSource] = useState(page.content)
+  const sourceRef = useRef(source)
+  useEffect(() => {
+    sourceRef.current = source
+  }, [source])
   const runner = useRunPage({ tabId: page.id, shared: true })
   const { run, running } = runner
   const [consoleHeight, setConsoleHeight] = useState(() => {
@@ -175,15 +182,25 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       saveContent(next)
       clearError()
       showUndo(message, async () => {
-        // Drop the pending save of `next`, or it lands after this and redoes the change.
-        saveContent.cancel()
-        setSource(previous)
-        replaceDoc(jsonViewRef.current, previous)
+        let done: boolean
         try {
-          await savePageContent(page.id, previous)
+          done = await undoWrite({
+            current: () => jsonViewRef.current?.state.doc.toString() ?? sourceRef.current,
+            applied: next,
+            previous,
+            // Drop the pending save of `next`, or it lands after this and redoes the change.
+            cancelPending: saveContent.cancel,
+            apply: (text) => {
+              setSource(text)
+              replaceDoc(jsonViewRef.current, text)
+            },
+            save: (text) => savePageContent(page.id, text)
+          })
         } catch (cause) {
           showError(errorText(cause, 'Could not undo'))
+          return
         }
+        if (!done) toast.info('Not undone: the page has changed since.')
       })
     },
     [page.id, saveContent, savePageContent, source]

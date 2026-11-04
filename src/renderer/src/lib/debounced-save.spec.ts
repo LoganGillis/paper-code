@@ -33,6 +33,17 @@ describe('createDebouncer', () => {
     vi.advanceTimersByTime(400)
     expect(save).toHaveBeenCalledExactlyOnceWith('typed later')
   })
+
+  it('flush saves the pending edit to its own page now, so switching pages keeps it', () => {
+    const save = vi.fn()
+    const saver = createDebouncer(400)
+    saver.run(() => save('page-a', 'last keystrokes'))
+    saver.flush()
+    expect(save).toHaveBeenCalledExactlyOnceWith('page-a', 'last keystrokes')
+    vi.advanceTimersByTime(1000)
+    saver.flush()
+    expect(save).toHaveBeenCalledOnce()
+  })
 })
 
 describe('replaceDocSpec', () => {

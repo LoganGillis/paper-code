@@ -1,4 +1,5 @@
-export type LockAction = 'delete' | 'move' | 'purge' | 'archive' | 'unarchive' | 'change'
+export type LockAction =
+  'delete' | 'move' | 'purge' | 'archive' | 'unarchive' | 'change' | 'restore'
 
 const VERB: Record<LockAction, string> = {
   delete: 'delete',
@@ -6,7 +7,8 @@ const VERB: Record<LockAction, string> = {
   purge: 'delete forever',
   archive: 'archive',
   unarchive: 'unarchive',
-  change: 'change'
+  change: 'change',
+  restore: 'restore'
 }
 
 /** The short hint shown on a disabled menu item, e.g. "Unlock to delete". */

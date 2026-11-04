@@ -97,6 +97,36 @@ export function folderSubtree(
   return ids
 }
 
+type FolderMoveTx = {
+  folder: {
+    findMany: (args: {
+      where: { spaceId: string }
+    }) => Promise<Array<{ id: string; parentId: string | null }>>
+  }
+}
+
+/**
+ * Throws a friendly error unless `parentId` (null for the space root) is a valid new parent for
+ * `folder`: not the folder itself, not one of its subfolders, and in the same space. Returns the
+ * space's folders so the caller can reuse them.
+ */
+export async function assertFolderMove(
+  tx: FolderMoveTx,
+  folder: { id: string; spaceId: string },
+  parentId: string | null
+): Promise<Array<{ id: string; parentId: string | null }>> {
+  const all = await tx.folder.findMany({ where: { spaceId: folder.spaceId } })
+  if (parentId == null) return all
+  if (parentId === folder.id) throw new Error('A folder cannot go inside itself.')
+  if (!all.some((item) => item.id === parentId)) {
+    throw new Error('A folder can only move into a folder in the same space.')
+  }
+  if (folderSubtree(all, folder.id).includes(parentId)) {
+    throw new Error('A folder cannot go inside one of its own subfolders.')
+  }
+  return all
+}
+
 type FolderTx = {
   folder: {
     findUniqueOrThrow: (args: {
