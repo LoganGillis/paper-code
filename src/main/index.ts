@@ -4,7 +4,7 @@ import icon from '../../resources/icon.png?asset'
 import { getPrisma } from './db'
 import { registerOutputWindows } from './output-window'
 import { registerRpc } from './rpc'
-import { seedIfEmpty } from './seed'
+import { repairSeededScripts, seedIfEmpty } from './seed'
 import { checkForUpdates, initUpdates } from './updates'
 import { createPaperWindow, loadRenderer } from './window'
 
@@ -151,6 +151,7 @@ app.whenReady().then(async () => {
   try {
     const prisma = getPrisma()
     await seedIfEmpty(prisma)
+    await repairSeededScripts(prisma)
   } catch (error) {
     console.error('Failed to initialize the database', error)
   }

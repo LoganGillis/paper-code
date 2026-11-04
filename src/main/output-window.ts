@@ -18,6 +18,21 @@ function slotFor(contents: WebContents): Slot | undefined {
   return undefined
 }
 
+/** Only the window that opened an output window, or that window itself, may control it. */
+function mayControl(slot: Slot, sender: WebContents): boolean {
+  if (!slot.owner.isDestroyed() && slot.owner.id === sender.id) return true
+  return !slot.window.isDestroyed() && slot.window.webContents.id === sender.id
+}
+
+function isSnapshot(value: unknown): value is OutputSnapshot {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as OutputSnapshot).key === 'string' &&
+    (value as OutputSnapshot).key.length > 0
+  )
+}
+
 function sendState(slot: Slot): void {
   const snapshot = snapshots.get(slot.key)
   if (!snapshot || slot.window.isDestroyed()) return
@@ -35,6 +50,9 @@ function remember(snapshot: OutputSnapshot, owner: WebContents): Slot | undefine
 
 export function registerOutputWindows(): void {
   ipcMain.handle('paper:output-open', (event, snapshot: OutputSnapshot) => {
+    if (!isSnapshot(snapshot) || slotFor(event.sender)) return
+    const existing = slots.get(snapshot.key)
+    if (existing && !existing.window.isDestroyed() && !mayControl(existing, event.sender)) return
     const open = remember(snapshot, event.sender)
     if (open) {
       open.window.show()
@@ -65,17 +83,21 @@ export function registerOutputWindows(): void {
   })
 
   ipcMain.on('paper:output-update', (event, snapshot: OutputSnapshot) => {
+    if (!isSnapshot(snapshot) || slotFor(event.sender)) return
+    const existing = slots.get(snapshot.key)
+    if (existing && !existing.window.isDestroyed() && !mayControl(existing, event.sender)) return
     remember(snapshot, event.sender)
   })
 
-  ipcMain.handle('paper:output-dock', (_event, key: string) => {
-    const slot = slots.get(key)
-    if (slot && !slot.window.isDestroyed()) slot.window.close()
+  ipcMain.handle('paper:output-dock', (event, key: string) => {
+    const slot = typeof key === 'string' ? slots.get(key) : undefined
+    if (!slot || slot.window.isDestroyed() || !mayControl(slot, event.sender)) return
+    slot.window.close()
   })
 
-  ipcMain.handle('paper:output-is-open', (_event, key: string) => {
-    const slot = slots.get(key)
-    return Boolean(slot && !slot.window.isDestroyed())
+  ipcMain.handle('paper:output-is-open', (event, key: string) => {
+    const slot = typeof key === 'string' ? slots.get(key) : undefined
+    return Boolean(slot && !slot.window.isDestroyed() && mayControl(slot, event.sender))
   })
 
   ipcMain.handle('paper:output-hello', (event) => {

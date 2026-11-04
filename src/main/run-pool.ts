@@ -1,11 +1,12 @@
-import { Worker } from 'node:worker_threads'
 import { join } from 'node:path'
+import { utilityProcess, type UtilityProcess } from 'electron'
 import type { RunResult } from '../shared/api'
-import type { RunContext } from './runner'
+import { RUN_TIMEOUT_MS, type RunContext } from './sandbox/protocol'
 
-const RUN_TIMEOUT_MS = 8_000
+/** Extra time the process gets to report its own timeout before it is killed. */
+const KILL_GRACE_MS = 500
 
-type WorkerReply = { ok: boolean; result?: RunResult; error?: string }
+type HostReply = { ok: boolean; result?: RunResult; error?: string }
 
 function failure(error: string): RunResult {
   return { logs: [], error }
@@ -16,8 +17,9 @@ function describe(cause: unknown): string {
 }
 
 /**
- * Runs a snippet in a dedicated worker. Scripts never run in the main process: if the worker
- * cannot start, crashes, or cannot send its result, the run fails with an error instead.
+ * Runs a snippet in its own short-lived utility process. Scripts never run in the main process:
+ * if the process cannot start, crashes, or exits early, the run fails with an error. The process
+ * is killed after the run timeout even when the script is stuck in async work.
  */
 export function executeSnippetAsync(
   language: 'javascript' | 'typescript',
@@ -25,11 +27,14 @@ export function executeSnippetAsync(
   context: RunContext
 ): Promise<RunResult> {
   return new Promise((resolve) => {
-    let worker: Worker
+    let child: UtilityProcess
     try {
-      worker = new Worker(join(__dirname, 'run-worker.js'))
+      child = utilityProcess.fork(join(__dirname, 'run-host.js'), [], {
+        serviceName: 'Paper script runner',
+        stdio: 'ignore'
+      })
     } catch (cause) {
-      console.error('Script worker failed to start', cause)
+      console.error('Script process failed to start', cause)
       resolve(failure(`The script runner could not start (${describe(cause)})`))
       return
     }
@@ -39,33 +44,31 @@ export function executeSnippetAsync(
       if (settled) return
       settled = true
       clearTimeout(timer)
-      void worker.terminate()
+      child.kill()
       resolve(result)
     }
 
     const timer = setTimeout(() => {
       finish(failure(`Timed out after ${RUN_TIMEOUT_MS}ms`))
-    }, RUN_TIMEOUT_MS + 500)
+    }, RUN_TIMEOUT_MS + KILL_GRACE_MS)
 
-    worker.once('message', (message: WorkerReply) => {
-      if (message.ok && message.result) finish(message.result)
-      else finish(failure(message.error ?? 'Script failed'))
+    child.once('spawn', () => {
+      try {
+        child.postMessage({ language, source, context })
+      } catch (cause) {
+        finish(failure(`The script could not be sent to the runner (${describe(cause)})`))
+      }
     })
-    worker.once('messageerror', (error) => {
-      finish(failure(`The script result could not be read (${describe(error)})`))
+    child.once('message', (message: HostReply) => {
+      if (message?.ok && message.result) finish(message.result)
+      else finish(failure(message?.error ?? 'Script failed'))
     })
-    worker.once('error', (error) => {
-      console.error('Script worker error', error)
-      finish(failure(`The script runner crashed (${describe(error)})`))
+    child.once('error', (type: string) => {
+      console.error('Script process error', type)
+      finish(failure(`The script runner crashed (${type})`))
     })
-    worker.once('exit', (code) => {
+    child.once('exit', (code) => {
       finish(failure(`The script runner stopped unexpectedly (exit code ${code})`))
     })
-
-    try {
-      worker.postMessage({ language, source, context })
-    } catch (cause) {
-      finish(failure(`The script could not be sent to the runner (${describe(cause)})`))
-    }
   })
 }

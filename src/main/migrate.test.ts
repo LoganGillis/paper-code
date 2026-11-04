@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '../generated/prisma/client'
-import { applySqlMigrations, sqliteFileUrl } from './migrate'
+import { applySqlMigrations, splitSqlStatements, sqliteFileUrl } from './migrate'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../prisma/migrations')
 const trashId = '20260819120000_trash_lock_history'
@@ -143,6 +143,43 @@ test('CRLF migration files still add deletedAt', () => {
     const check = new Database(databasePath)
     assert.equal(columnNames(check, 'Page').includes('deletedAt'), true)
     check.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('splitSqlStatements ignores semicolons in quotes and comments', () => {
+  const sql = `-- note; here\nCREATE TABLE "a;b" (x TEXT DEFAULT 'x;y');\n/* c; d */ INSERT INTO t VALUES ('it''s;');\n`
+  assert.deepEqual(splitSqlStatements(sql), [
+    `CREATE TABLE "a;b" (x TEXT DEFAULT 'x;y')`,
+    `INSERT INTO t VALUES ('it''s;')`
+  ])
+})
+
+test('a failing migration rolls back fully and is not recorded', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'paper-migrate-tx-'))
+  const migrations = join(dir, 'migrations')
+  mkdirSync(join(migrations, '001_ok'), { recursive: true })
+  mkdirSync(join(migrations, '002_bad'), { recursive: true })
+  writeFileSync(join(migrations, '001_ok', 'migration.sql'), 'CREATE TABLE "Space" (id TEXT);')
+  writeFileSync(
+    join(migrations, '002_bad', 'migration.sql'),
+    'CREATE TABLE "Half" (id TEXT);\nINSERT INTO "Nope" VALUES (1);'
+  )
+  const databasePath = join(dir, 'app.db')
+  try {
+    assert.throws(() => applySqlMigrations(databasePath, [migrations]), /no such table: Nope/)
+    const db = new Database(databasePath)
+    const tables = (
+      db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[]
+    ).map((row) => row.name)
+    const ids = (db.prepare('SELECT id FROM _migrations').all() as { id: string }[]).map(
+      (row) => row.id
+    )
+    db.close()
+    assert.ok(tables.includes('Space'))
+    assert.ok(!tables.includes('Half'))
+    assert.deepEqual(ids, ['001_ok'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

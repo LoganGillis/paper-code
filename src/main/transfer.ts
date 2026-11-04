@@ -5,6 +5,7 @@ import { docToMarkdown, markdownToDoc } from '../shared/markdown-transfer'
 import type { PageType } from '../shared/api'
 import { extensionForType, isPageType } from '../shared/page-types'
 import type { IconColorId, IconName } from '../shared/icons'
+import { parseBackup, type Backup } from './backup-schema'
 import { getPrisma } from './db'
 import { resolveInside } from './safe-path'
 
@@ -238,51 +239,6 @@ export async function importSpace(): Promise<string | null> {
   return space.id
 }
 
-type Backup = {
-  version: 1
-  exportedAt: string
-  spaces: Array<{
-    name: string
-    icon: IconName
-    iconColor: IconColorId
-    secretsExposed: boolean
-    secretKeys: string[]
-    folders: Array<{
-      id: string
-      parentId: string | null
-      name: string
-      icon: IconName
-      iconColor: IconColorId
-      sortOrder: number
-    }>
-    pages: Array<{
-      id: string
-      folderId: string | null
-      title: string
-      type: PageType
-      content: string
-      description: string
-      icon: IconName
-      iconColor: IconColorId
-      sortOrder: number
-      archived: boolean
-      deletedAt: string | null
-      locked: boolean
-      spellcheck: boolean
-      versions: Array<{ title: string; content: string; description: string; createdAt: string }>
-      runs: Array<{
-        language: string
-        source: string
-        logs: string
-        result: string | null
-        error: string | null
-        inputs: string
-        createdAt: string
-      }>
-    }>
-  }>
-}
-
 export async function exportBackup(): Promise<string | null> {
   const destRoot = await pickDirectory('Export Paper backup')
   if (!destRoot) return null
@@ -365,112 +321,115 @@ export async function importBackup(): Promise<number | null> {
   const filePath = picked.filePaths[0]
   if (picked.canceled || !filePath) return null
   const raw = await readFile(filePath, 'utf8')
-  const backup = JSON.parse(raw) as Backup
-  if (backup.version !== 1 || !Array.isArray(backup.spaces)) {
-    throw new Error('Unsupported or damaged Paper backup.')
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw new Error('Unsupported or damaged Paper backup: not JSON.')
   }
-  for (const item of backup.spaces) {
-    for (const page of item.pages ?? []) {
-      if (!isPageType(page.type)) {
-        throw new Error(`"${page.title}" has an unknown page type (${String(page.type)}).`)
-      }
-    }
-  }
-  const prisma = getPrisma()
+  const backup = parseBackup(json)
   let count = 0
-  for (const item of backup.spaces) {
-    const space = await prisma.space.create({
-      data: {
-        name: item.name,
-        icon: item.icon,
-        iconColor: item.iconColor,
-        secretsExposed: Boolean(item.secretsExposed)
-      }
-    })
-    count += 1
-    const folderIds = new Map<string, string>()
-    const folders = [...(item.folders ?? [])].sort((a, b) => {
-      const ad = a.parentId ? 1 : 0
-      const bd = b.parentId ? 1 : 0
-      return ad - bd
-    })
-    let remaining = [...folders]
-    while (remaining.length > 0) {
-      const next = remaining.filter((folder) => !folder.parentId || folderIds.has(folder.parentId))
-      if (next.length === 0) break
-      for (const folder of next) {
-        const created = await prisma.folder.create({
+  // One transaction: a backup is imported completely or not at all.
+  await getPrisma().$transaction(
+    async (tx) => {
+      for (const item of backup.spaces) {
+        const space = await tx.space.create({
           data: {
-            name: folder.name,
-            icon: folder.icon,
-            iconColor: folder.iconColor,
-            sortOrder: folder.sortOrder,
-            spaceId: space.id,
-            parentId: folder.parentId ? (folderIds.get(folder.parentId) ?? null) : null
+            name: item.name,
+            icon: item.icon,
+            iconColor: item.iconColor,
+            secretsExposed: Boolean(item.secretsExposed)
           }
         })
-        folderIds.set(folder.id, created.id)
-      }
-      remaining = remaining.filter((folder) => !folderIds.has(folder.id))
-    }
-    const pageIds = new Map<string, string>()
-    for (const page of item.pages ?? []) {
-      const created = await prisma.page.create({
-        data: {
-          title: page.title,
-          type: page.type,
-          content: page.content,
-          description: page.description ?? '',
-          icon: page.icon,
-          iconColor: page.iconColor,
-          sortOrder: page.sortOrder,
-          archived: Boolean(page.archived),
-          deletedAt: page.deletedAt ? new Date(page.deletedAt) : null,
-          locked: Boolean(page.locked),
-          spellcheck: page.spellcheck !== false,
-          spaceId: space.id,
-          folderId: page.folderId ? (folderIds.get(page.folderId) ?? null) : null
+        count += 1
+        const folderIds = new Map<string, string>()
+        const folders = [...(item.folders ?? [])].sort((a, b) => {
+          const ad = a.parentId ? 1 : 0
+          const bd = b.parentId ? 1 : 0
+          return ad - bd
+        })
+        let remaining = [...folders]
+        while (remaining.length > 0) {
+          const next = remaining.filter(
+            (folder) => !folder.parentId || folderIds.has(folder.parentId)
+          )
+          if (next.length === 0) break
+          for (const folder of next) {
+            const created = await tx.folder.create({
+              data: {
+                name: folder.name,
+                icon: folder.icon,
+                iconColor: folder.iconColor,
+                sortOrder: folder.sortOrder,
+                spaceId: space.id,
+                parentId: folder.parentId ? (folderIds.get(folder.parentId) ?? null) : null
+              }
+            })
+            folderIds.set(folder.id, created.id)
+          }
+          remaining = remaining.filter((folder) => !folderIds.has(folder.id))
         }
-      })
-      pageIds.set(page.id, created.id)
-      for (const version of page.versions ?? []) {
-        await prisma.pageVersion.create({
-          data: {
-            pageId: created.id,
-            title: version.title,
-            content: version.content,
-            description: version.description,
-            createdAt: new Date(version.createdAt)
+        const pageIds = new Map<string, string>()
+        for (const page of item.pages ?? []) {
+          const created = await tx.page.create({
+            data: {
+              title: page.title,
+              type: page.type,
+              content: page.content,
+              description: page.description ?? '',
+              icon: page.icon,
+              iconColor: page.iconColor,
+              sortOrder: page.sortOrder,
+              archived: Boolean(page.archived),
+              deletedAt: page.deletedAt ? new Date(page.deletedAt) : null,
+              locked: Boolean(page.locked),
+              spellcheck: page.spellcheck !== false,
+              spaceId: space.id,
+              folderId: page.folderId ? (folderIds.get(page.folderId) ?? null) : null
+            }
+          })
+          pageIds.set(page.id, created.id)
+          for (const version of page.versions ?? []) {
+            await tx.pageVersion.create({
+              data: {
+                pageId: created.id,
+                title: version.title,
+                content: version.content,
+                description: version.description,
+                createdAt: new Date(version.createdAt)
+              }
+            })
           }
-        })
-      }
-      for (const run of page.runs ?? []) {
-        await prisma.runRecord.create({
-          data: {
-            pageId: created.id,
-            language: run.language,
-            source: run.source,
-            logs: run.logs,
-            result: run.result,
-            error: run.error,
-            inputs: run.inputs ?? '{}',
-            createdAt: new Date(run.createdAt)
+          for (const run of page.runs ?? []) {
+            await tx.runRecord.create({
+              data: {
+                pageId: created.id,
+                language: run.language,
+                source: run.source,
+                logs: run.logs,
+                result: run.result,
+                error: run.error,
+                inputs: run.inputs ?? '{}',
+                createdAt: new Date(run.createdAt)
+              }
+            })
           }
-        })
+        }
+        for (const page of item.pages ?? []) {
+          const id = pageIds.get(page.id)
+          if (!id || page.type !== 'markdown') continue
+          let next = page.content
+          for (const [oldId, mapped] of pageIds) {
+            if (mapped === oldId) continue
+            next = next.split(oldId).join(mapped)
+          }
+          if (next !== page.content) {
+            await tx.page.update({ where: { id }, data: { content: next } })
+          }
+        }
       }
-    }
-    for (const page of item.pages ?? []) {
-      const id = pageIds.get(page.id)
-      if (!id || page.type !== 'markdown') continue
-      let next = page.content
-      for (const [oldId, mapped] of pageIds) {
-        if (mapped === oldId) continue
-        next = next.split(oldId).join(mapped)
-      }
-      if (next !== page.content) {
-        await prisma.page.update({ where: { id }, data: { content: next } })
-      }
-    }
-  }
+    },
+    { timeout: 120_000 }
+  )
   return count
 }

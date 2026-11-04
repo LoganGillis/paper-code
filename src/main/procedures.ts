@@ -7,6 +7,7 @@ import { getDatabasePath, getPrisma } from './db'
 import { didSeedThisLaunch } from './seed'
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updates'
 import { executeSnippetAsync } from './run-pool'
+import { redactRunResult, redactSecrets } from '../shared/redact'
 import { exportBackup, exportSpace, importBackup, importSpace } from './transfer'
 import { isSecretEncryptionAvailable, sealSecret, unsealSecret } from './secrets'
 import {
@@ -803,12 +804,16 @@ export const procedures: AppApi = {
     },
     listRuns: async (input) => {
       const data = idInput.parse(input)
-      const rows = await getPrisma().runRecord.findMany({
-        where: { pageId: data.id },
-        orderBy: { createdAt: 'desc' },
-        take: 50
-      })
-      return rows.map(serializeRun)
+      const [rows, owner] = await Promise.all([
+        getPrisma().runRecord.findMany({
+          where: { pageId: data.id },
+          orderBy: { createdAt: 'desc' },
+          take: 50
+        }),
+        getPrisma().page.findUnique({ where: { id: data.id }, select: { spaceId: true } })
+      ])
+      const secrets = owner ? await loadSecretsForRun(owner.spaceId) : {}
+      return rows.map((row) => redactSecrets(serializeRun(row), secrets))
     },
     move: async (input) => {
       const data = z
@@ -882,13 +887,17 @@ export const procedures: AppApi = {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }
-      const outcome = await executeSnippetAsync(data.language, data.source, {
-        page: current,
-        pages: pagesForRun,
-        spaces: spaces.map((space) => ({ id: space.id, name: space.name })),
-        folders,
-        secrets: await loadSecretsForRun(data.spaceId)
-      })
+      const secrets = await loadSecretsForRun(data.spaceId)
+      const outcome = redactRunResult(
+        await executeSnippetAsync(data.language, data.source, {
+          page: current,
+          pages: pagesForRun,
+          spaces: spaces.map((space) => ({ id: space.id, name: space.name })),
+          folders,
+          secrets
+        }),
+        secrets
+      )
       if (
         page &&
         (page.type === 'javascript' || page.type === 'typescript') &&

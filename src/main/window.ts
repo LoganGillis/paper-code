@@ -44,8 +44,8 @@ export function createPaperWindow(options: {
     backgroundColor: '#f7f5f1',
     icon,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false
+      preload: join(__dirname, '../preload/index.cjs'),
+      sandbox: true
     }
   })
 

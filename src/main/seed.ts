@@ -53,8 +53,11 @@ console.log('nine thirty', $today.at(9, 30))
 console.log($today.subDays(1).isSame($yesterday))
 `
 
-const SALES_JS = `import orders from 'orders'
-import products from 'products'
+// Built from parts: electron-vite's ESM shim inserts its CommonJS shim after the last line that
+// looks like a static import, and an import line inside this template would match.
+const SALES_IMPORTS = ["import orders from 'orders'", "import products from 'products'"].join('\n')
+
+const SALES_JS = `${SALES_IMPORTS}
 
 console.log(orders)
 console.log('columns', orders.columns)
@@ -141,6 +144,17 @@ function welcomeDoc(ids: { hello: string; today: string; sales: string; orders: 
     )
   )
 }
+
+/**
+ * The example script and CSV sources the seed writes, exported so tests can run them.
+ */
+export const EXAMPLE_SOURCES = {
+  hello: HELLO_TS,
+  today: TODAY_JS,
+  sales: SALES_JS,
+  orders: ORDERS_CSV,
+  products: PRODUCTS_CSV
+} as const
 
 export async function seedExamples(prisma: PrismaClient): Promise<void> {
   const space = await prisma.space.create({
@@ -306,4 +320,34 @@ export async function seedIfEmpty(prisma: PrismaClient): Promise<boolean> {
   await seedExamples(prisma)
   seededThisLaunch = true
   return true
+}
+
+const BUILD_SHIM_RE =
+  /\n*\/\/ -- CommonJS Shims --\nimport __cjs_(?:url__ from 'node:url';\nimport __cjs_path__ from 'node:path';\nimport __cjs_)?mod__ from 'node:module';\nconst __filename = [^\n]*;\nconst __dirname = [^\n]*;\nconst require = __cjs_mod__\.createRequire\(import\.meta\.url\);\n/
+
+/**
+ * Removes the CommonJS shim that older builds wrote into the seeded "sales" script.
+ * Returns the text unchanged when it holds no shim.
+ */
+export function stripBuildShim(content: string): string {
+  return content.replace(BUILD_SHIM_RE, '\n\n')
+}
+
+/**
+ * Repairs seeded JavaScript pages that an older build saved with its CommonJS shim inside.
+ * Only pages holding the exact shim block are touched. Returns how many pages changed.
+ */
+export async function repairSeededScripts(prisma: PrismaClient): Promise<number> {
+  const pages = await prisma.page.findMany({
+    where: { type: 'javascript', content: { contains: '// -- CommonJS Shims --' } },
+    select: { id: true, content: true }
+  })
+  let repaired = 0
+  for (const page of pages) {
+    const content = stripBuildShim(page.content)
+    if (content === page.content) continue
+    await prisma.page.update({ where: { id: page.id }, data: { content } })
+    repaired += 1
+  }
+  return repaired
 }

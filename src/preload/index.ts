@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import {
   RPC_CHANNEL,
   type OutputSnapshot,
@@ -73,16 +72,9 @@ const api = {
   }
 }
 
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-expect-error defined in dts
-  window.electron = electronAPI
-  // @ts-expect-error defined in dts
-  window.api = api
+// Sandboxed preload: only contextBridge and ipcRenderer are used, and nothing else is exposed.
+try {
+  contextBridge.exposeInMainWorld('api', api)
+} catch (error) {
+  console.error(error)
 }
