@@ -48,7 +48,7 @@ export function DeskBlotter({ active = true }: { active?: boolean }): React.JSX.
       style={{ '--page-accent': ICON_ACCENT.slate } as React.CSSProperties}
     >
       <DeskAtmosphere active={active} />
-      <header className="relative z-10 mx-auto w-full max-w-3xl shrink-0 px-10 pt-10 pb-4">
+      <header className="relative z-10 w-full max-w-3xl shrink-0 px-10 pt-10 pb-4">
         <div className="mb-3 flex items-start gap-3">
           <House className="mt-1 size-8 shrink-0 text-ink-soft" strokeWidth={1.5} />
           <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
@@ -65,7 +65,7 @@ export function DeskBlotter({ active = true }: { active?: boolean }): React.JSX.
         </div>
       </header>
 
-      <div className="relative z-10 mx-auto min-h-0 w-full max-w-3xl flex-1 px-10 pr-12 pb-8">
+      <div className="relative z-10 min-h-0 w-full max-w-3xl flex-1 px-10 pr-12 pb-8">
         <div className="mb-8 grid grid-cols-7 gap-1">
           {days.map((day) => {
             const today = sameDay(day, now)

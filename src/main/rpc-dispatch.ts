@@ -15,3 +15,15 @@ export function lookupProcedure(table: object, path: unknown): Handler | null {
   const handler = (group as Record<string, unknown>)[method]
   return typeof handler === 'function' ? (handler as Handler) : null
 }
+
+/**
+ * RPC is only for the main app windows: the sender must be one of the `trusted` webContents
+ * (output windows never are) and the call must come from its top frame, not an iframe.
+ */
+export function isTrustedRpcSender(
+  trusted: ReadonlySet<number>,
+  senderId: number,
+  fromMainFrame: boolean
+): boolean {
+  return fromMainFrame && trusted.has(senderId)
+}

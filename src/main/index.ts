@@ -3,7 +3,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getPrisma } from './db'
 import { registerOutputWindows } from './output-window'
-import { registerRpc } from './rpc'
+import { registerRpc, trustRpcWindow } from './rpc'
 import { repairSeededScripts, seedIfEmpty } from './seed'
 import { checkForUpdates, initUpdates } from './updates'
 import { createPaperWindow, loadRenderer } from './window'
@@ -28,6 +28,7 @@ function createWindow(): BrowserWindow {
     minWidth: 880,
     minHeight: 600
   })
+  trustRpcWindow(mainWindow)
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const mod = process.platform === 'darwin' ? input.meta : input.control

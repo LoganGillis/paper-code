@@ -31,7 +31,15 @@ import type {
 } from '../shared/api'
 import { buildGuideDataPages, isGuideDataPageId, isGuidePageId } from '../shared/guide-data'
 import { PAGE_TYPE_IDS, PAGE_TYPES } from '../shared/page-types'
-import { assertEditable, assertTypeChange, trashFolderTree, uniqueTitle } from './page-rules'
+import {
+  assertEditable,
+  assertNotLocked,
+  assertTypeChange,
+  folderSubtree,
+  trashFolderTree,
+  uniqueTitle
+} from './page-rules'
+import { lockedInFolderMessage } from '../shared/locks'
 
 const idInput = z.object({ id: z.string().min(1) })
 const pageTypes = PAGE_TYPE_IDS
@@ -615,6 +623,14 @@ export const procedures: AppApi = {
       const folder = await prisma.folder.findUniqueOrThrow({ where: { id: data.id } })
       const parentId = data.parentId === undefined ? folder.parentId : data.parentId
       if (parentId === folder.id) throw new Error('A folder cannot go inside itself.')
+      if (parentId !== folder.parentId) {
+        const all = await prisma.folder.findMany({ where: { spaceId: folder.spaceId } })
+        const locked = await prisma.page.findFirst({
+          where: { folderId: { in: folderSubtree(all, folder.id) }, locked: true },
+          select: { title: true }
+        })
+        if (locked) throw new Error(lockedInFolderMessage(folder.name, locked.title, 'move'))
+      }
       await prisma.folder.update({ where: { id: folder.id }, data: { parentId } })
       const siblings = await prisma.folder.findMany({
         where: { spaceId: folder.spaceId, parentId },
@@ -759,6 +775,10 @@ export const procedures: AppApi = {
     },
     delete: async (input) => {
       const data = idInput.parse(input)
+      assertNotLocked(
+        await getPrisma().page.findUniqueOrThrow({ where: { id: data.id } }),
+        'delete'
+      )
       await getPrisma().page.update({
         where: { id: data.id },
         data: { deletedAt: new Date(), archived: false }
@@ -774,6 +794,7 @@ export const procedures: AppApi = {
     },
     purge: async (input) => {
       const data = idInput.parse(input)
+      assertNotLocked(await getPrisma().page.findUniqueOrThrow({ where: { id: data.id } }), 'purge')
       await getPrisma().page.delete({ where: { id: data.id } })
     },
     listVersions: async (input) => {
@@ -828,6 +849,7 @@ export const procedures: AppApi = {
       const prisma = getPrisma()
       const page = await prisma.page.findUniqueOrThrow({ where: { id: data.id } })
       const folderId = data.folderId === undefined ? page.folderId : data.folderId
+      assertNotLocked(page, 'move')
       await prisma.page.update({ where: { id: page.id }, data: { folderId } })
       const siblings = await prisma.page.findMany({
         where: { spaceId: page.spaceId, folderId, archived: false, deletedAt: null },

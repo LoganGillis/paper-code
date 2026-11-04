@@ -20,6 +20,9 @@ import { IconPicker } from '@/components/icon-picker'
 import { ItemMenu } from '@/components/item-menu'
 import { NewMenuItems } from '@/components/new-menu-items'
 import { useConfirm } from '@/lib/confirm'
+import { LockHint } from '@/components/lock-hint'
+import { firstLockedPage } from '@/lib/tree-locks'
+import { lockHint } from '@shared/locks'
 import { SecretsDialog } from '@/components/secrets-dialog'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -86,7 +89,8 @@ function PageRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          draggable
+          draggable={!page.locked}
+          title={page.locked ? lockHint('move') : undefined}
           onDragStart={(event) => {
             event.dataTransfer.setData(
               'application/x-paper',
@@ -198,6 +202,7 @@ function PageRow({
                 }
                 onRestore={page.deletedAt ? () => void restorePage(page.id) : undefined}
                 onDelete={() => (showTrash ? void purge() : void deletePage(page.id))}
+                deleteHint={page.locked ? lockHint(showTrash ? 'purge' : 'delete') : undefined}
               />
             </div>
           </div>
@@ -243,10 +248,12 @@ function PageRow({
         )}
         <ContextMenuItem
           className="text-destructive focus:text-destructive"
+          disabled={page.locked}
           onSelect={() => (showTrash ? void purge() : void deletePage(page.id))}
         >
           <Trash2 className="size-3.5" />
           {showTrash ? 'Delete forever' : 'Move to trash'}
+          {page.locked ? <LockHint>{lockHint(showTrash ? 'purge' : 'delete')}</LockHint> : null}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -273,6 +280,7 @@ function FolderRow({
     movePage
   } = useWorkspace()
   const confirm = useConfirm()
+  const lockedInside = firstLockedPage(folder)
   const removeFolder = async (): Promise<void> => {
     const ok = await confirm({
       title: 'Move this folder to the trash?',
@@ -289,7 +297,8 @@ function FolderRow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            draggable
+            draggable={!lockedInside}
+            title={lockedInside ? lockHint('move') : undefined}
             onDragStart={(event) => {
               event.dataTransfer.setData(
                 'application/x-paper',
@@ -357,6 +366,7 @@ function FolderRow({
                   onDuplicate={() => void duplicateFolder(folder.id)}
                   onCopy={() => void copyText(folder.name)}
                   onDelete={() => void removeFolder()}
+                  deleteHint={lockedInside ? lockHint('delete') : undefined}
                 />
               </div>
             </div>
@@ -374,10 +384,12 @@ function FolderRow({
           <ContextMenuSeparator />
           <ContextMenuItem
             className="text-destructive focus:text-destructive"
+            disabled={Boolean(lockedInside)}
             onSelect={() => void removeFolder()}
           >
             <Trash2 className="size-3.5" />
             Delete
+            {lockedInside ? <LockHint>{lockHint('delete')}</LockHint> : null}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

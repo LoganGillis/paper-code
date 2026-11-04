@@ -1,7 +1,10 @@
 import type { RunResult } from './api'
 
-/** Secrets shorter than this are left alone so they don't mask ordinary text. */
-export const MIN_REDACT_LENGTH = 4
+/**
+ * Secrets shorter than this are left alone so they don't mask ordinary text. Redaction matches the
+ * exact value only: a transformed secret (base64, reversed, sliced, hashed) cannot be redacted.
+ */
+export const MIN_REDACT_LENGTH = 3
 
 type Mask = { value: string; label: string }
 

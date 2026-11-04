@@ -7,6 +7,9 @@ export function isSecretBag(value: unknown): boolean {
   return typeof value === 'object' && value !== null && secretBags.has(value)
 }
 
+/** Keys the runtime probes on any returned value (`then` for await, coercion, JSON, etc.). */
+const NOT_SECRETS = new Set(['then', 'catch', 'finally', 'valueOf', 'constructor', '__proto__'])
+
 export function installSecretHelpers(
   target: Record<string, unknown>,
   bag: Record<string, string>
@@ -33,8 +36,10 @@ export function installSecretHelpers(
 
   const $secrets = new Proxy(Object.create(null) as Record<string, string>, {
     get(_target, prop) {
-      if (prop === inspect.custom || prop === 'toString' || prop === 'toJSON') return preview
-      if (typeof prop !== 'string') return undefined
+      if (prop === inspect.custom || prop === 'toString') return preview
+      if (prop === 'toJSON') return names
+      // Promise, coercion, and other probes read these; they are never secrets.
+      if (typeof prop !== 'string' || NOT_SECRETS.has(prop)) return undefined
       return read(prop)
     },
     has(_target, prop) {

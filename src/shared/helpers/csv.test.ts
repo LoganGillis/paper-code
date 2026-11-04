@@ -55,7 +55,7 @@ test('resolvePage stays in the current space unless a space is named', () => {
   assert.equal(resolvePage('Missing/orders', here, pages, spaces), null)
 })
 
-test('resolvePage reports same-titled pages as ambiguous and skips archived pages', () => {
+test('resolvePage prefers the one same-folder match and skips archived pages', () => {
   const here = page({
     id: 'script',
     title: 'script',
@@ -78,6 +78,8 @@ test('resolvePage reports same-titled pages as ambiguous and skips archived page
     archived: true
   })
 
-  assert.throws(() => resolvePage('sales', here, [here, root, nested, archived]), /matches 2/)
+  assert.equal(resolvePage('sales', here, [here, root, nested, archived])?.id, 'near')
+  const twin = page({ id: 'twin', title: 'sales', spaceId: 'workshop', folderId: 'folder-a' })
+  assert.throws(() => resolvePage('sales', here, [here, root, nested, twin]), /matches 3/)
   assert.equal(resolvePage('sales', here, [here, nested, archived])?.id, 'near')
 })

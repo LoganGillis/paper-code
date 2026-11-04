@@ -1,43 +1,59 @@
 import { toast } from 'sonner'
-import { looksLikeCsv } from '@shared/csv'
+import { clipboardToCsv, looksLikeCsv } from '@shared/csv'
 import { formatJsonText, jsonErrorAt } from '@shared/json-text'
 import type { JsonPreview } from '@/lib/json-preview'
 
 export const NOT_JSON_MESSAGE = "Clipboard doesn't look like JSON"
 
+export type JsonPaste = { text: string; asText: boolean }
+
 /**
  * Turns clipboard text into what a JSON paste should write: formatted JSON when it reads
  * exactly, the user's pick from the preview when it does not, or null when there is nothing
- * to paste. Text that looks like CSV gets a "Make a table" button when `onCsv` is given.
+ * to paste now. Text that looks like a table opens the Paste dialog with "Make a table" (when
+ * `onCsv` is given) and "Paste as text"; other non-JSON text shows a toast whose "Paste as text"
+ * action calls `onText`, the same thing Ctrl+V does.
  */
 export async function resolveJsonPaste(
   raw: string,
   preview: JsonPreview,
-  onCsv?: (text: string) => void
-): Promise<string | null> {
+  handlers: { onCsv?: (csv: string) => void; onText: (text: string) => void }
+): Promise<JsonPaste | null> {
   let result: ReturnType<typeof formatJsonText>
   try {
     result = formatJsonText(raw)
   } catch {
-    if (onCsv && looksLikeCsv(raw)) {
-      toast(NOT_JSON_MESSAGE, {
-        description: 'It looks like a table.',
-        action: { label: 'Make a table', onClick: () => onCsv(raw) }
+    if (handlers.onCsv && looksLikeCsv(raw)) {
+      const choice = await preview({
+        result: { value: raw.trim(), exact: false, warnings: [] },
+        title: 'Paste this table?',
+        description:
+          "This isn't JSON, but it looks like a table. The first row becomes the header.",
+        textLabel: 'Paste as text',
+        tableLabel: 'Make a table'
       })
-    } else {
-      toast.error(NOT_JSON_MESSAGE)
+      if (choice === 'table') handlers.onCsv(clipboardToCsv(raw))
+      if (choice === 'text') return { text: raw, asText: true }
+      return null
     }
+    if (!raw.trim()) {
+      toast.error('The clipboard is empty')
+      return null
+    }
+    toast.error(NOT_JSON_MESSAGE, {
+      action: { label: 'Paste as text', onClick: () => handlers.onText(raw) }
+    })
     return null
   }
-  if (result.exact) return result.value
+  if (result.exact) return { text: result.value, asText: false }
   const choice = await preview({
     result,
     title: 'Paste this JSON?',
     jsonLabel: 'Paste as JSON',
     textLabel: 'Paste as text'
   })
-  if (choice === 'json') return result.value
-  if (choice === 'text') return raw
+  if (choice === 'json') return { text: result.value, asText: false }
+  if (choice === 'text') return { text: raw, asText: true }
   return null
 }
 

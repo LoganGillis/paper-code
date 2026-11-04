@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { looksLikeCsv, parseClipboardGrid } from './csv'
+import { clipboardToCsv, looksLikeCsv, parseClipboardGrid, parseCsv } from './csv'
 
 describe('parseClipboardGrid', () => {
   it('splits comma-separated text', () => {
@@ -36,5 +36,14 @@ describe('looksLikeCsv', () => {
     expect(looksLikeCsv('{"a":1,\n"b":2}')).toBe(false)
     expect(looksLikeCsv('a,b\n1,2,3')).toBe(false)
     expect(looksLikeCsv('one\ntwo')).toBe(false)
+  })
+})
+
+describe('clipboardToCsv', () => {
+  it('makes the first non-empty line the header, like an opened CSV file', () => {
+    expect(clipboardToCsv('a,b\n1,2')).toBe('a,b\n1,2\n')
+    const csv = clipboardToCsv('\n\n  name\tqty \n pen\t2\n\n')
+    expect(csv).toBe('name,qty\npen,2\n')
+    expect(parseCsv(csv)[0]).toEqual(['name', 'qty'])
   })
 })

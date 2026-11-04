@@ -4,7 +4,7 @@
 import { installDateHelpers } from '../../shared/helpers/dates'
 import { installSecretHelpers, isSecretBag } from '../../shared/helpers/secret-bag'
 import { $Table } from '../../shared/helpers/table'
-import { parseLooseJson } from '../../shared/json-text'
+import { jsonErrorAt } from '../../shared/json-text'
 import type { RunLog, RunResult } from '../../shared/api'
 import { inspect } from './inspect'
 import type { Bridge, BridgeCall, BridgeReply, LoadedPage, MainInfo } from './protocol'
@@ -67,7 +67,8 @@ function plain(value: unknown, depth: number, seen: Map<object, unknown>): unkno
       return '[Function]'
   }
   const object = value as object
-  if (isSecretBag(object)) return '[$secrets]'
+  // Only the names, never the values.
+  if (isSecretBag(object)) return Object.keys(object).sort()
   if (seen.has(object)) return seen.get(object)
   if (depth >= MAX_DEPTH) return '[Object]'
   if (object instanceof $Table) return plain(object.rows, depth, seen)
@@ -218,10 +219,17 @@ function tableFrom(page: LoadedPage): $Table {
 }
 
 function jsonFrom(page: LoadedPage): unknown {
+  if (!page.content.trim()) throw new Error(`"${page.title}" is empty`)
+  const invalid = jsonErrorAt(page.content)
+  if (invalid) {
+    const before = page.content.slice(0, invalid.offset).split('\n')
+    const where = `line ${before.length}, column ${before[before.length - 1].length + 1}`
+    throw new Error(`"${page.title}" is not valid JSON: ${invalid.message} (${where})`)
+  }
   try {
-    return parseLooseJson(page.content)
+    return JSON.parse(page.content)
   } catch (cause) {
-    throw new Error(`"${page.title}" is not valid JSON (${errorText(cause)})`)
+    throw new Error(`"${page.title}" is not valid JSON: ${errorText(cause)}`)
   }
 }
 

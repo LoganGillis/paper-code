@@ -4,12 +4,20 @@ import type { FormattedJson } from '@shared/json-text'
 export type JsonPreviewRequest = {
   result: FormattedJson
   title: string
-  jsonLabel: string
+  /** Shown above the warnings, e.g. why a table is offered. */
+  description?: string
+  /** Omit to hide the JSON button (the text is not JSON). */
+  jsonLabel?: string
   textLabel: string
+  /** When set, the main button offers to make a CSV table instead. */
+  tableLabel?: string
 }
 
-/** `json` keeps the formatted JSON, `text` keeps the original text, `null` cancels. */
-export type JsonPreviewChoice = 'json' | 'text' | null
+/**
+ * `json` keeps the formatted JSON, `text` keeps the original text, `table` makes a CSV table,
+ * `null` cancels.
+ */
+export type JsonPreviewChoice = 'json' | 'text' | 'table' | null
 
 export type JsonPreview = (request: JsonPreviewRequest) => Promise<JsonPreviewChoice>
 

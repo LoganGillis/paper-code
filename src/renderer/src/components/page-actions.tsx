@@ -33,6 +33,8 @@ import {
 import { useWorkspace } from '@/lib/workspace'
 import { RunOutput } from '@/components/run-output'
 import { EmptyState } from '@/components/empty-state'
+import { LockHint } from '@/components/lock-hint'
+import { lockHint } from '@shared/locks'
 
 export function PageActions({ page }: { page: Page }): React.JSX.Element | null {
   const {
@@ -79,9 +81,7 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
             <CopyPlus className="size-3.5" />
             Duplicate
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => void navigator.clipboard.writeText(page.content)}
-          >
+          <DropdownMenuItem onSelect={() => void navigator.clipboard.writeText(page.content)}>
             <Copy className="size-3.5" />
             Copy
           </DropdownMenuItem>
@@ -121,10 +121,12 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
           )}
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"
+            disabled={page.locked}
             onSelect={() => void deletePage(page.id)}
           >
             <Trash2 className="size-3.5" />
             Move to trash
+            {page.locked ? <LockHint>{lockHint('delete')}</LockHint> : null}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -133,7 +135,9 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
         <DialogContent className="max-h-[80vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Version history</DialogTitle>
-            <DialogDescription>Snapshots from saves. Restore replaces the current page.</DialogDescription>
+            <DialogDescription>
+              Snapshots from saves. Restore replaces the current page.
+            </DialogDescription>
           </DialogHeader>
           <div className="mt-3 max-h-[60vh] overflow-auto">
             {versions.length === 0 ? (
@@ -194,7 +198,9 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
                       }
                       onClick={() => setSelectedRunId(record.id)}
                     >
-                      <span className="text-[13px]">{when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                      <span className="text-[13px]">
+                        {when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </span>
                       <span className="text-[11px] text-muted-foreground">
                         {when.toLocaleDateString()}
                         {record.error ? ' · error' : ''}

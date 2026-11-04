@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   assertEditable,
+  assertNotLocked,
   assertTypeChange,
   folderSubtree,
   trashFolderTree,
@@ -17,10 +18,31 @@ describe('assertEditable', () => {
     expect(() => assertEditable(locked, { type: 'csv' })).toThrow(/locked/)
   })
 
+  it('refuses to unlock and edit in one call', () => {
+    expect(() => assertEditable(locked, { locked: false, content: 'x' })).toThrow(/on its own/)
+    expect(() => assertEditable(locked, { locked: false, title: 'x' })).toThrow(/on its own/)
+  })
+
   it('allows unlocking, unchanged saves, and unlocked pages', () => {
-    expect(() => assertEditable(locked, { locked: false, content: 'x' })).not.toThrow()
+    expect(() => assertEditable(locked, { locked: false })).not.toThrow()
+    expect(() => assertEditable(locked, { locked: false, content: 'c' })).not.toThrow()
     expect(() => assertEditable(locked, { content: 'c' })).not.toThrow()
     expect(() => assertEditable({ ...locked, locked: false }, { content: 'x' })).not.toThrow()
+  })
+})
+
+describe('assertNotLocked', () => {
+  it('names the page and the action', () => {
+    expect(() => assertNotLocked({ title: 'Notes', locked: true }, 'delete')).toThrow(
+      '"Notes" is locked. Unlock it to delete.'
+    )
+    expect(() => assertNotLocked({ title: 'Notes', locked: true }, 'move')).toThrow(
+      /Unlock it to move/
+    )
+    expect(() => assertNotLocked({ title: 'Notes', locked: true }, 'purge')).toThrow(
+      /Unlock it to delete forever/
+    )
+    expect(() => assertNotLocked({ title: 'Notes', locked: false }, 'delete')).not.toThrow()
   })
 })
 
@@ -57,11 +79,12 @@ describe('folder delete', () => {
     const calls: string[] = []
     const tx = {
       folder: {
-        findUniqueOrThrow: vi.fn(async () => ({ id: 'a', spaceId: 's' })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: 'a', spaceId: 's', name: 'Top' })),
         findMany: vi.fn(async () => folders),
         deleteMany: vi.fn(async () => calls.push('folders'))
       },
       page: {
+        findFirst: vi.fn(async () => null),
         updateMany: vi.fn(async () => calls.push('pages'))
       }
     }
@@ -73,5 +96,28 @@ describe('folder delete', () => {
     })
     expect(tx.folder.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['a', 'b', 'c'] } } })
     expect(calls).toEqual(['pages', 'pages', 'folders'])
+  })
+
+  it('refuses before touching anything when a page inside is locked', async () => {
+    const tx = {
+      folder: {
+        findUniqueOrThrow: vi.fn(async () => ({ id: 'a', spaceId: 's', name: 'Top' })),
+        findMany: vi.fn(async () => folders),
+        deleteMany: vi.fn(async () => undefined)
+      },
+      page: {
+        findFirst: vi.fn(async () => ({ title: 'Plan' })),
+        updateMany: vi.fn(async () => undefined)
+      }
+    }
+    await expect(trashFolderTree(tx, 'a', new Date())).rejects.toThrow(
+      '"Top" has a locked page, "Plan". Unlock it to delete the folder.'
+    )
+    expect(tx.page.findFirst).toHaveBeenCalledWith({
+      where: { folderId: { in: ['a', 'b', 'c'] }, locked: true },
+      select: { title: true }
+    })
+    expect(tx.page.updateMany).not.toHaveBeenCalled()
+    expect(tx.folder.deleteMany).not.toHaveBeenCalled()
   })
 })

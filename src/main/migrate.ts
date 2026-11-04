@@ -57,6 +57,29 @@ export function splitSqlStatements(sql: string): string[] {
   return statements
 }
 
+const unquote = (name: string): string => name.replace(/^["`[]|["`\]]$/g, '').toLowerCase()
+
+/**
+ * True only for the one known 0.1.3 case: `statement` creates a table or index, or adds a
+ * column, and `message` is SQLite saying that exact table, index, or column already exists.
+ */
+export function isAlreadyAppliedStep(statement: string, message: string): boolean {
+  const sql = statement.replace(/\s+/g, ' ').trim()
+  const create = /^CREATE (?:UNIQUE )?(TABLE|INDEX) (?:IF NOT EXISTS )?("[^"]+"|`[^`]+`|\S+)/i.exec(
+    sql
+  )
+  const exists = /^(table|index) ("[^"]+"|`[^`]+`|\S+) already exists$/i.exec(message.trim())
+  if (create && exists) {
+    return (
+      create[1].toLowerCase() === exists[1].toLowerCase() &&
+      unquote(create[2]) === unquote(exists[2])
+    )
+  }
+  const add = /^ALTER TABLE \S+ ADD (?:COLUMN )?("[^"]+"|`[^`]+`|\S+)/i.exec(sql)
+  const duplicate = /^duplicate column name: (\S+)$/i.exec(message.trim())
+  return Boolean(add && duplicate && unquote(add[1]) === unquote(duplicate[1]))
+}
+
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
@@ -80,7 +103,7 @@ function runMigrationSql(db: Database.Database, id: string, sql: string): void {
     try {
       db.exec(statement)
     } catch (cause) {
-      if (!LEGACY_REPLAY.test(messageOf(cause))) throw cause
+      if (!isAlreadyAppliedStep(statement, messageOf(cause))) throw cause
       console.warn(`Migration ${id}: skipped a step that was already applied (${messageOf(cause)})`)
     }
   }

@@ -46,11 +46,37 @@ describe('sandbox page resolution', () => {
     expect((await run('$csv("Data").length')).result).toBe('2')
   })
 
-  it('$json and require throw the ambiguity error with full paths', async () => {
-    const message =
-      '"Data" matches 2 JSON pages. Use the full path: "Workshop//Data", "Workshop/Reports/Data"'
-    expect((await run('$json("Data")')).error).toBe(message)
-    expect((await run('require("Data")')).error).toMatch(/matches 3 importable pages/)
+  it('$json prefers the one same-folder match; require still reports a mixed-type tie', async () => {
+    expect((await run('$json("Data").at')).result).toBe('root')
+    expect((await run('require("Data")')).error).toBe(
+      '"Data" matches 3 importable pages. Use the full path: "Workshop//Data.json", "Workshop/Reports/Data.json", "Workshop//Data.csv"'
+    )
+  })
+
+  it('require picks a page by extension when a CSV and a JSON page share a title', async () => {
+    expect((await run('require("Data.json").at')).result).toBe('root')
+    expect((await run('require("Workshop//Data.csv").length')).result).toBe('2')
+    expect((await run('require("Workshop/Reports/Data.json").at')).result).toBe('reports')
+  })
+
+  it('$json uses the strict parser and names the page', async () => {
+    const extra = [
+      makePage({ id: 'bad', title: 'Loose', spaceId: 'ws', type: 'json', content: '{a: 1}' }),
+      makePage({ id: 'empty', title: 'Blank', spaceId: 'ws', type: 'json', content: '  ' })
+    ]
+    const go = (source: string): ReturnType<typeof runInSandbox> =>
+      runInSandbox(
+        {
+          language: 'javascript',
+          source,
+          context: { page: script, pages: [...pages, ...extra], spaces, folders }
+        },
+        prelude
+      )
+    const loose = (await go('$json("Loose")')).error ?? ''
+    expect(loose).toMatch(/^"Loose" is not valid JSON: Expected .+ \(line 1, column 2\)$/)
+    expect((await go('require("Blank")')).error).toBe('"Blank" is empty')
+    expect(loose + (await go('$json("Blank")')).error).not.toMatch(/Clipboard/)
   })
 
   it('$json, $csv, and require accept Space/Folder/Title', async () => {
@@ -96,6 +122,16 @@ describe('sandbox output', () => {
     expect(JSON.stringify(out)).not.toContain('sk-live-12345')
     expect(out.logs[0].message).toBe('key $secret(API_KEY)')
     expect(out.error).toBe('bad $secret(API_KEY)')
+  })
+
+  it('returns $secrets as its names, and await does not probe it for a secret', async () => {
+    expect((await run('$secrets')).resultObject).toEqual(['API_KEY'])
+    const awaited = await run('(async () => $secrets)()')
+    expect(awaited.error).toBeUndefined()
+    expect(awaited.resultObject).toEqual(['API_KEY'])
+    expect((await run('JSON.stringify($secrets)')).result).toBe('["API_KEY"]')
+    expect((await run('String($secrets)')).result).toBe('$secrets { API_KEY }')
+    expect(JSON.stringify(await run('$secrets'))).not.toContain('sk-live-12345')
   })
 
   it('times out sync loops and stuck async work', async () => {

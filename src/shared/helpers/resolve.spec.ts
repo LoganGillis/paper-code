@@ -50,10 +50,19 @@ describe('resolvePage', () => {
     expect(resolvePage('Data', here, pages, spaces, { types: ['csv'], folders })?.id).toBe('csv')
   })
 
+  it("resolves a bare title to the single match in the script's own folder", () => {
+    expect(resolvePage('Data', here, pages, spaces, { types: ['json'], folders })?.id).toBe('root')
+    const inReports = { ...here, folderId: 'reports' }
+    expect(resolvePage('Data', inReports, pages, spaces, { types: ['json'], folders })?.id).toBe(
+      'report'
+    )
+  })
+
   it('throws an ambiguity error that lists the full path of each match', () => {
+    const elsewhere = { ...here, folderId: 'q1' }
     let caught: unknown
     try {
-      resolvePage('Data', here, pages, spaces, { types: ['json'], folders, label: 'JSON' })
+      resolvePage('Data', elsewhere, pages, spaces, { types: ['json'], folders, label: 'JSON' })
     } catch (error) {
       caught = error
     }
@@ -79,6 +88,30 @@ describe('resolvePage', () => {
     expect(() =>
       resolvePage('Workshop/Data', here, pages, spaces, { types: ['json'], folders })
     ).toThrow(AmbiguousPageError)
+    const twin = makePage({ id: 'twin', title: 'Data', spaceId: 'ws', type: 'json' })
+    expect(() =>
+      resolvePage('Data', here, [...pages, twin], spaces, { types: ['json'], folders })
+    ).toThrow(AmbiguousPageError)
+  })
+
+  it('suggests unique paths with extensions when types differ, and each one resolves', () => {
+    let caught: unknown
+    try {
+      resolvePage('Data', here, pages, spaces, { folders, label: 'importable' })
+    } catch (error) {
+      caught = error
+    }
+    const { matches } = caught as AmbiguousPageError
+    expect(matches).toEqual([
+      'Workshop//Data.json',
+      'Workshop/Reports/Data.json',
+      'Workshop//Data.csv'
+    ])
+    expect(matches.map((spec) => resolvePage(spec, here, pages, spaces, { folders })?.id)).toEqual([
+      'root',
+      'report',
+      'csv'
+    ])
   })
 
   it('walks nested folders for a deeper path', () => {

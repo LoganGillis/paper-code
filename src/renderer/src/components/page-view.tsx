@@ -193,12 +193,15 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       showError(errorText(cause, 'Could not read the clipboard'))
       return
     }
-    const next = await resolveJsonPaste(raw, preview, (csv) => {
-      void createPage(page.spaceId, 'csv', defaultPageTitle('csv'), csv).catch((cause) =>
-        showError(errorText(cause, 'Could not make a table'))
-      )
+    const next = await resolveJsonPaste(raw, preview, {
+      onCsv: (csv) => {
+        void createPage(page.spaceId, 'csv', defaultPageTitle('csv'), csv).catch((cause) =>
+          showError(errorText(cause, 'Could not make a table'))
+        )
+      },
+      onText: (text) => writeJson(text, 'Pasted as text')
     })
-    if (next != null) writeJson(next, 'Pasted JSON')
+    if (next != null) writeJson(next.text, next.asText ? 'Pasted as text' : 'Pasted JSON')
   }, [createPage, page.spaceId, preview, writeJson])
 
   const formatJson = useCallback(async () => {

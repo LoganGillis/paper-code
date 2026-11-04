@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '../generated/prisma/client'
-import { applySqlMigrations, splitSqlStatements, sqliteFileUrl } from './migrate'
+import {
+  applySqlMigrations,
+  isAlreadyAppliedStep,
+  splitSqlStatements,
+  sqliteFileUrl
+} from './migrate'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../prisma/migrations')
 const trashId = '20260819120000_trash_lock_history'
@@ -180,6 +185,64 @@ test('a failing migration rolls back fully and is not recorded', () => {
     assert.ok(tables.includes('Space'))
     assert.ok(!tables.includes('Half'))
     assert.deepEqual(ids, ['001_ok'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('isAlreadyAppliedStep matches only the exact table, index, or column', () => {
+  assert.equal(
+    isAlreadyAppliedStep('CREATE TABLE "Page" (id TEXT)', 'table "Page" already exists'),
+    true
+  )
+  assert.equal(
+    isAlreadyAppliedStep('CREATE UNIQUE INDEX "A_b" ON "A"("b")', 'index A_b already exists'),
+    true
+  )
+  assert.equal(
+    isAlreadyAppliedStep(
+      'ALTER TABLE "Page" ADD COLUMN "locked" BOOLEAN',
+      'duplicate column name: locked'
+    ),
+    true
+  )
+  assert.equal(
+    isAlreadyAppliedStep('CREATE TABLE "Page" (id TEXT)', 'table "Other" already exists'),
+    false
+  )
+  assert.equal(isAlreadyAppliedStep('CREATE VIEW "v" AS SELECT 1', 'view v already exists'), false)
+  assert.equal(
+    isAlreadyAppliedStep('ALTER TABLE "Page" ADD COLUMN "a" TEXT', 'duplicate column name: b'),
+    false
+  )
+  assert.equal(
+    isAlreadyAppliedStep('INSERT INTO "Page" VALUES (1)', 'table Page already exists'),
+    false
+  )
+})
+
+test('a replayed 0.1.3 migration rethrows anything but the known already-applied steps', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'paper-migrate-replay-'))
+  const migrations = join(dir, 'migrations')
+  mkdirSync(join(migrations, '001_base'), { recursive: true })
+  mkdirSync(join(migrations, '002_replay'), { recursive: true })
+  writeFileSync(
+    join(migrations, '001_base', 'migration.sql'),
+    'CREATE TABLE "Space" (id TEXT);\nCREATE TABLE "Thing" (id TEXT);\nCREATE VIEW "v" AS SELECT 1;'
+  )
+  writeFileSync(
+    join(migrations, '002_replay', 'migration.sql'),
+    'CREATE TABLE "Thing" (id TEXT);\nCREATE VIEW "v" AS SELECT 2;'
+  )
+  const databasePath = join(dir, 'app.db')
+  try {
+    assert.throws(() => applySqlMigrations(databasePath, [migrations]), /view "v" already exists/)
+    const db = new Database(databasePath)
+    const ids = (db.prepare('SELECT id FROM _migrations').all() as { id: string }[]).map(
+      (row) => row.id
+    )
+    db.close()
+    assert.deepEqual(ids, ['001_base'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

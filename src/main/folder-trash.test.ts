@@ -55,3 +55,42 @@ test('deleting a folder trashes its pages and subfolder pages in one transaction
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('deleting a folder with a locked page inside refuses and changes nothing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'paper-folder-lock-'))
+  const databasePath = join(dir, 'app.db')
+  applySqlMigrations(databasePath, [migrationsDir])
+  const prisma = new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url: sqliteFileUrl(databasePath) })
+  })
+  try {
+    const space = await prisma.space.create({ data: { name: 'Workshop' } })
+    const top = await prisma.folder.create({ data: { name: 'Top', spaceId: space.id } })
+    const child = await prisma.folder.create({
+      data: { name: 'Child', spaceId: space.id, parentId: top.id }
+    })
+    await prisma.page.create({
+      data: { title: 'Free', type: 'markdown', spaceId: space.id, folderId: top.id }
+    })
+    await prisma.page.create({
+      data: {
+        title: 'Keep me',
+        type: 'markdown',
+        spaceId: space.id,
+        folderId: child.id,
+        locked: true
+      }
+    })
+
+    await assert.rejects(
+      prisma.$transaction((tx) => trashFolderTree(tx, top.id, new Date())),
+      /"Top" has a locked page, "Keep me"/
+    )
+    const pages = await prisma.page.findMany()
+    assert.equal(pages.filter((page) => page.deletedAt).length, 0)
+    assert.equal((await prisma.folder.findMany()).length, 2)
+  } finally {
+    await prisma.$disconnect()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

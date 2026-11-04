@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { RPC_PATHS } from '../shared/rpc-paths'
-import { lookupProcedure } from './rpc-dispatch'
+import { isTrustedRpcSender, lookupProcedure } from './rpc-dispatch'
 
 const get = async (): Promise<string> => 'page'
 const table = { pages: { get }, spaces: { list: async () => [] } }
@@ -33,5 +33,15 @@ describe('lookupProcedure', () => {
 
   it('lists each path once', () => {
     expect(new Set(RPC_PATHS).size).toBe(RPC_PATHS.length)
+  })
+})
+
+describe('isTrustedRpcSender', () => {
+  const trusted = new Set([1])
+
+  it('accepts only the main frame of a trusted window', () => {
+    expect(isTrustedRpcSender(trusted, 1, true)).toBe(true)
+    expect(isTrustedRpcSender(trusted, 1, false)).toBe(false)
+    expect(isTrustedRpcSender(trusted, 2, true)).toBe(false)
   })
 })

@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { redactRunResult, redactSecrets } from './redact'
 
 describe('redactSecrets', () => {
-  const secrets = { API_KEY: 'sk-live-12345', SHORT: 'abc', TOKEN: 'sk-live-12345-extra' }
+  const secrets = {
+    API_KEY: 'sk-live-12345',
+    SHORT: 'ab',
+    PIN: 'abc',
+    TOKEN: 'sk-live-12345-extra'
+  }
 
   it('masks values in nested strings and keys, longest first', () => {
     const out = redactSecrets(
@@ -20,8 +25,8 @@ describe('redactSecrets', () => {
     })
   })
 
-  it('leaves very short values alone', () => {
-    expect(redactSecrets('abc abc', secrets)).toBe('abc abc')
+  it('masks three-character values but leaves shorter ones alone', () => {
+    expect(redactSecrets('abc ab', secrets)).toBe('$secret(PIN) ab')
   })
 
   it('masks a whole run result', () => {

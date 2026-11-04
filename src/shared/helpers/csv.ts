@@ -62,6 +62,15 @@ function stemTitle(page: Page, title: string): boolean {
   return normalizeSpec(page.title) === normalizeSpec(title)
 }
 
+/** The page type a title's extension names (`Data.json` → `json`), or null for none. */
+function typeFromExtension(title: string): PageType | null {
+  const lower = title.trim().toLowerCase()
+  for (const info of Object.values(PAGE_TYPES)) {
+    if (lower.endsWith(info.extension) && lower.length > info.extension.length) return info.id
+  }
+  return null
+}
+
 function folderChain(folderId: string | null, folders: Map<string, FolderRef>): string[] {
   const chain: string[] = []
   const seen = new Set<string>()
@@ -94,11 +103,14 @@ export function fullPageSpec(
 export class AmbiguousPageError extends Error {
   readonly matches: string[]
 
-  constructor(spec: string, label: string, matches: string[]) {
+  /** `count` is the number of pages matched; `matches` lists each distinct full path once. */
+  constructor(spec: string, label: string, matches: string[], count = matches.length) {
+    const shared =
+      matches.length < count ? ' Some share a path; rename one to tell them apart.' : ''
     super(
-      `"${spec}" matches ${matches.length} ${label} pages. Use the full path: ${matches
+      `"${spec}" matches ${count} ${label} pages. Use the full path: ${matches
         .map((match) => `"${match}"`)
-        .join(', ')}`
+        .join(', ')}${shared}`
     )
     this.name = 'AmbiguousPageError'
     this.matches = matches
@@ -127,7 +139,12 @@ function candidates(
       (folderPath === null || sameFolderPath(folderChain(page.folderId, folderMap), folderPath))
   )
   const exact = pool.filter((page) => exactTitle(page, title))
-  const found = exact.length > 0 ? exact : pool.filter((page) => stemTitle(page, title))
+  const implied = typeFromExtension(title)
+  // `Data.json` picks the JSON page when a CSV and a JSON page are both titled `Data`.
+  const found =
+    exact.length > 0
+      ? exact
+      : pool.filter((page) => stemTitle(page, title) && (implied === null || page.type === implied))
   if (found.length > 1 && isGuidePageId(from.id)) {
     const guide = found.filter((page) => isGuideDataPageId(page.id))
     if (guide.length > 0) return guide
@@ -136,8 +153,20 @@ function candidates(
 }
 
 /**
+ * For a bare title (no space or folder in the spec), the one match in the script's own folder,
+ * if there is exactly one. This keeps older scripts that relied on "nearest page wins" working.
+ */
+function sameFolderMatch(spec: string, from: Page, found: Page[]): Page | null {
+  const { spaceName, folderPath } = splitImportSpec(spec)
+  if (spaceName !== null || folderPath !== null) return null
+  const near = found.filter((page) => page.folderId === from.folderId)
+  return near.length === 1 ? near[0] : null
+}
+
+/**
  * Finds the one page a `$csv` / `$json` / `require` spec points at. Returns `null` when nothing
- * matches and throws {@link AmbiguousPageError} when more than one page of the wanted type does.
+ * matches. Several matches for a bare title resolve to the single one in the script's own folder;
+ * otherwise more than one page of the wanted type throws {@link AmbiguousPageError}.
  */
 export function resolvePage(
   spec: string,
@@ -151,10 +180,18 @@ export function resolvePage(
     (page) => !options.types || options.types.includes(page.type)
   )
   if (found.length > 1) {
+    const near = sameFolderMatch(spec, from, found)
+    if (near) return near
+    // Add the extension when the matches differ in type, so every suggestion resolves.
+    const mixed = new Set(found.map((page) => page.type)).size > 1
+    const suggestions = found.map(
+      (page) => fullPageSpec(page, spaces, folders) + (mixed ? PAGE_TYPES[page.type].extension : '')
+    )
     throw new AmbiguousPageError(
       spec,
       options.label ?? 'matching',
-      found.map((page) => fullPageSpec(page, spaces, folders))
+      [...new Set(suggestions)],
+      found.length
     )
   }
   return found[0] ?? null

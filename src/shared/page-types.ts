@@ -79,3 +79,8 @@ export function isPageType(value: unknown): value is PageType {
 export function extensionForType(type: string): string {
   return isPageType(type) ? PAGE_TYPES[type].extension : '.md'
 }
+
+/** The type an export records for a stored page: the type itself, or `markdown` when unknown. */
+export function exportedType(type: string): PageType {
+  return isPageType(type) ? type : 'markdown'
+}

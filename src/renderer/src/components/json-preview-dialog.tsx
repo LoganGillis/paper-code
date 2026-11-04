@@ -52,16 +52,20 @@ export function JsonPreviewProvider({
         <AlertDialogContent className="max-w-xl">
           <AlertDialogHeader>
             <AlertDialogTitle>{request?.title}</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <ul className="list-disc space-y-1 pl-5">
-                {request?.result.warnings.map((warning) => (
-                  <li key={warning.code}>{warning.message}</li>
-                ))}
-              </ul>
-            </AlertDialogDescription>
+            {request?.description ? (
+              <AlertDialogDescription>{request.description}</AlertDialogDescription>
+            ) : (
+              <AlertDialogDescription asChild>
+                <ul className="list-disc space-y-1 pl-5">
+                  {request?.result.warnings.map((warning) => (
+                    <li key={warning.code}>{warning.message}</li>
+                  ))}
+                </ul>
+              </AlertDialogDescription>
+            )}
           </AlertDialogHeader>
           <pre
-            aria-label="JSON preview"
+            aria-label={request?.tableLabel ? 'Table preview' : 'JSON preview'}
             className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 font-mono text-[12px]"
           >
             {shown}
@@ -72,9 +76,16 @@ export function JsonPreviewProvider({
             <Button variant="outline" onClick={() => finish('text')}>
               {request?.textLabel}
             </Button>
-            <Button autoFocus onClick={() => finish('json')}>
-              {request?.jsonLabel}
-            </Button>
+            {request?.jsonLabel ? (
+              <Button autoFocus={!request.tableLabel} onClick={() => finish('json')}>
+                {request.jsonLabel}
+              </Button>
+            ) : null}
+            {request?.tableLabel ? (
+              <Button autoFocus onClick={() => finish('table')}>
+                {request.tableLabel}
+              </Button>
+            ) : null}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

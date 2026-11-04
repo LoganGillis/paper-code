@@ -837,7 +837,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const deleteFolder = useCallback(
     async (id: string) => {
       const trashed = pagesInFolder(trees, id)
-      await api.folders.delete({ id })
+      try {
+        await api.folders.delete({ id })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not delete the folder'))
+        return
+      }
       dropPages(trashed)
       if (activeFolderId === id) setActiveFolderId(null)
       if (spaceId) await refreshTree(spaceId)
@@ -898,7 +903,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const purgePage = useCallback(
     async (id: string) => {
-      await api.pages.purge({ id })
+      try {
+        await api.pages.purge({ id })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not delete the page'))
+        return
+      }
       dropPages([id])
       setTabs((current) => {
         const host = spaceId ?? spaces[0]?.id ?? ''
@@ -983,7 +993,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const deletePage = useCallback(
     async (id: string) => {
       const spaceForPage = page?.id === id ? page.spaceId : spaceId
-      await api.pages.delete({ id })
+      try {
+        await api.pages.delete({ id })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not move the page to the trash'))
+        return
+      }
       dropPages([id])
       setTabs((current) => {
         const host = spaceId ?? spaces[0]?.id ?? ''
@@ -1030,25 +1045,33 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         showError(errorText(cause, 'Could not read the clipboard'))
         return
       }
-      const text = await resolveJsonPaste(raw, preview, (csv) => {
-        void createPage(nextSpaceId, 'csv', defaultPageTitle('csv'), csv, options).catch((cause) =>
-          showError(errorText(cause, 'Could not make a table'))
-        )
-      })
-      if (text == null) return
-      try {
-        const created = await createPage(
-          nextSpaceId,
-          'json',
-          defaultPageTitle('json'),
-          text,
-          options
-        )
-        clearError()
-        showUndo('Pasted into a new JSON page', () => deletePageRef.current(created.id))
-      } catch (cause) {
-        showError(errorText(cause, 'Could not create the page'))
+      const create = async (text: string, asText: boolean): Promise<void> => {
+        try {
+          const created = await createPage(
+            nextSpaceId,
+            'json',
+            defaultPageTitle('json'),
+            text,
+            options
+          )
+          clearError()
+          showUndo(
+            asText ? 'Pasted as text into a new JSON page' : 'Pasted into a new JSON page',
+            () => deletePageRef.current(created.id)
+          )
+        } catch (cause) {
+          showError(errorText(cause, 'Could not create the page'))
+        }
       }
+      const pasted = await resolveJsonPaste(raw, preview, {
+        onCsv: (csv) => {
+          void createPage(nextSpaceId, 'csv', defaultPageTitle('csv'), csv, options).catch(
+            (cause) => showError(errorText(cause, 'Could not make a table'))
+          )
+        },
+        onText: (text) => void create(text, true)
+      })
+      if (pasted) await create(pasted.text, pasted.asText)
     },
     [createPage, preview]
   )
@@ -1109,7 +1132,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const movePage = useCallback(
     async (input: { id: string; folderId?: string | null; beforeId?: string | null }) => {
-      await api.pages.move(input)
+      try {
+        await api.pages.move(input)
+      } catch (cause) {
+        showError(errorText(cause, 'Could not move the page'))
+        return
+      }
       if (spaceId) await refreshTree(spaceId)
     },
     [refreshTree, spaceId]
@@ -1117,7 +1145,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const moveFolder = useCallback(
     async (input: { id: string; parentId?: string | null; beforeId?: string | null }) => {
-      await api.folders.move(input)
+      try {
+        await api.folders.move(input)
+      } catch (cause) {
+        showError(errorText(cause, 'Could not move the folder'))
+        return
+      }
       if (spaceId) await refreshTree(spaceId)
     },
     [refreshTree, spaceId]

@@ -146,3 +146,15 @@ export function looksLikeCsv(text: string): boolean {
   const width = rows[0].length
   return width >= 2 && rows.every((row) => row.length === width)
 }
+
+/**
+ * Clipboard text (comma- or tab-separated) as CSV for a new table page. Blank lines and the
+ * whitespace around cells are dropped, so the first non-empty line becomes the header row, the
+ * same way an opened CSV file reads.
+ */
+export function clipboardToCsv(text: string): string {
+  const rows = parseClipboardGrid(text.trim())
+    .map((row) => row.map((cell) => cell.trim()))
+    .filter((row) => row.some((cell) => cell))
+  return `${serializeCsv(rows)}\n`
+}

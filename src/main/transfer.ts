@@ -3,26 +3,11 @@ import { dirname, extname, join } from 'node:path'
 import { dialog, BrowserWindow } from 'electron'
 import { docToMarkdown, markdownToDoc } from '../shared/markdown-transfer'
 import type { PageType } from '../shared/api'
-import { extensionForType, isPageType } from '../shared/page-types'
+import { exportedType, extensionForType } from '../shared/page-types'
 import type { IconColorId, IconName } from '../shared/icons'
-import { parseBackup, type Backup } from './backup-schema'
+import { parseBackup, parseManifest, type Backup, type Manifest } from './backup-schema'
 import { getPrisma } from './db'
 import { resolveInside } from './safe-path'
-
-type Manifest = {
-  version: 1
-  space: { name: string; icon: IconName; iconColor: IconColorId }
-  folders: Array<{ path: string; icon: IconName; iconColor: IconColorId }>
-  pages: Array<{
-    id: string
-    path: string
-    type: PageType
-    icon: IconName
-    iconColor: IconColorId
-    description: string
-  }>
-  secretKeys: string[]
-}
 
 function safeSegment(value: string): string {
   let cleaned = ''
@@ -126,14 +111,16 @@ export async function exportSpace(spaceId: string): Promise<string | null> {
   for (const page of space.pages) {
     if (page.archived) continue
     const dir = page.folderId ? (folderPath.get(page.folderId) ?? '') : ''
-    const path = uniquePath(used, dir, safeSegment(page.title), extFor(page.type))
+    // An unknown type is written as Markdown, matching its `.md` file.
+    const type = exportedType(page.type)
+    const path = uniquePath(used, dir, safeSegment(page.title), extFor(type))
     const abs = join(root, ...path.split('/'))
     await mkdir(dirname(abs), { recursive: true })
-    await writeFile(abs, fileBody(page.type as PageType, page.content), 'utf8')
+    await writeFile(abs, fileBody(type, page.content), 'utf8')
     manifest.pages.push({
       id: page.id,
       path,
-      type: page.type as PageType,
+      type,
       icon: page.icon as IconName,
       iconColor: page.iconColor as IconColorId,
       description: page.description
@@ -150,19 +137,12 @@ export async function importSpace(): Promise<string | null> {
 
   const raw = await readFile(join(source, 'paper.json'), 'utf8').catch(() => null)
   if (!raw) throw new Error('This folder is not a Paper export (missing paper.json).')
-  const manifest = JSON.parse(raw) as Manifest
-  if (manifest.version !== 1 || !manifest.space?.name) {
-    throw new Error('Unsupported or damaged Paper export.')
-  }
+  const warnings: string[] = []
+  const manifest = parseManifest(raw, warnings)
+  for (const warning of warnings) console.warn(`[import space] ${warning}`)
 
   const files = new Map<string, string>()
-  for (const item of manifest.pages ?? []) {
-    if (!isPageType(item.type)) {
-      throw new Error(`"${item.path}" has an unknown page type (${String(item.type)}).`)
-    }
-    if (typeof item.path !== 'string' || !item.path.trim()) {
-      throw new Error('A page in paper.json has no path.')
-    }
+  for (const item of manifest.pages) {
     files.set(item.path, await resolveInside(source, item.path))
   }
 
@@ -272,6 +252,7 @@ export async function exportBackup(): Promise<string | null> {
         id: page.id,
         folderId: page.folderId,
         title: page.title,
+        // Kept as stored, even when unknown; import turns unknown types into Markdown.
         type: page.type as PageType,
         content: page.content,
         description: page.description,
@@ -327,7 +308,9 @@ export async function importBackup(): Promise<number | null> {
   } catch {
     throw new Error('Unsupported or damaged Paper backup: not JSON.')
   }
-  const backup = parseBackup(json)
+  const warnings: string[] = []
+  const backup = parseBackup(json, warnings)
+  for (const warning of warnings) console.warn(`[import backup] ${warning}`)
   let count = 0
   // One transaction: a backup is imported completely or not at all.
   await getPrisma().$transaction(
@@ -338,7 +321,8 @@ export async function importBackup(): Promise<number | null> {
             name: item.name,
             icon: item.icon,
             iconColor: item.iconColor,
-            secretsExposed: Boolean(item.secretsExposed)
+            // Never trust a backup to grant scripts access to secrets; the user opts in again.
+            secretsExposed: false
           }
         })
         count += 1
