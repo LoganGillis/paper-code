@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { EditorView } from '@codemirror/view'
 import {
   ArrowLeft,
   Braces,
@@ -12,7 +13,7 @@ import {
   Table2,
   X
 } from 'lucide-react'
-import { formatJsonText } from '@shared/json-text'
+import { defaultPageTitle } from '@shared/titles'
 import { ICON_ACCENT } from '@shared/icons'
 import { PAGE_TYPES } from '@shared/page-types'
 import type { Page, RunResult } from '@shared/api'
@@ -21,6 +22,10 @@ import { useWorkspace } from '@/lib/workspace'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { CodeEditor } from '@/components/code-editor'
+import { jumpTo } from '@/lib/editor-jump'
+import { resolveJsonFormat, resolveJsonPaste } from '@/lib/json-actions'
+import { useJsonPreview } from '@/lib/json-preview'
+import { clearError, errorText, showError, showUndo } from '@/lib/notify'
 import { CsvChart } from '@/components/csv-chart'
 import { CsvEditor } from '@/components/csv-editor'
 import { IconBadge, IconPicker } from '@/components/icon-picker'
@@ -144,9 +149,12 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     pagesById,
     selectPage,
     saveBlockContent,
-    flushSave
+    flushSave,
+    createPage
   } = useWorkspace()
   const { flash } = useSavedFlash()
+  const preview = useJsonPreview()
+  const jsonViewRef = useRef<EditorView | null>(null)
   const [title, setTitle] = useState(page.title)
   const [source, setSource] = useState(page.content)
   const [run, setRun] = useState<RunResult | null>(null)
@@ -165,6 +173,43 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     await savePageContent(id, content)
   })
   const saveDescription = useDebouncedSaver(page.id, savePageDescription)
+
+  const writeJson = useCallback(
+    (next: string, message: string) => {
+      const previous = source
+      setSource(next)
+      saveContent(next)
+      clearError()
+      showUndo(message, async () => {
+        setSource(previous)
+        await savePageContent(page.id, previous)
+      })
+    },
+    [page.id, saveContent, savePageContent, source]
+  )
+
+  const pasteJson = useCallback(async () => {
+    let raw: string
+    try {
+      raw = await navigator.clipboard.readText()
+    } catch (cause) {
+      showError(errorText(cause, 'Could not read the clipboard'))
+      return
+    }
+    const next = await resolveJsonPaste(raw, preview, (csv) => {
+      void createPage(page.spaceId, 'csv', defaultPageTitle('csv'), csv).catch((cause) =>
+        showError(errorText(cause, 'Could not make a table'))
+      )
+    })
+    if (next != null) writeJson(next, 'Pasted JSON')
+  }, [createPage, page.spaceId, preview, writeJson])
+
+  const formatJson = useCallback(async () => {
+    const next = await resolveJsonFormat(source, preview, (offset) =>
+      jumpTo(jsonViewRef.current, offset)
+    )
+    if (next != null) writeJson(next, 'Formatted JSON')
+  }, [preview, source, writeJson])
   const locked = isGuidePageId(page.id) || page.locked
   const isCode = page.type === 'javascript' || page.type === 'typescript'
   const isCsv = page.type === 'csv'
@@ -384,17 +429,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               className="text-muted-foreground"
               disabled={page.locked}
               aria-label="Paste JSON from clipboard"
-              onClick={() => {
-                void navigator.clipboard.readText().then((text) => {
-                  try {
-                    const next = formatJsonText(text)
-                    setSource(next)
-                    saveContent(next)
-                  } catch {
-                    // Leave the page alone when the clipboard is not JSON.
-                  }
-                })
-              }}
+              onClick={() => void pasteJson()}
             >
               <ClipboardPaste className="size-3.5" />
               Paste
@@ -403,15 +438,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               className="text-muted-foreground"
               disabled={page.locked}
               aria-label="Format JSON"
-              onClick={() => {
-                try {
-                  const next = formatJsonText(source)
-                  setSource(next)
-                  saveContent(next)
-                } catch {
-                  // Leave the page alone when the text is not JSON.
-                }
-              }}
+              onClick={() => void formatJson()}
             >
               <Braces className="size-3.5" />
               Format
@@ -425,6 +452,10 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               value={source}
               readOnly={page.locked}
               language="json"
+              onFormat={() => void formatJson()}
+              onEditorView={(view) => {
+                jsonViewRef.current = view
+              }}
               onChange={(content) => {
                 setSource(content)
                 saveContent(content)

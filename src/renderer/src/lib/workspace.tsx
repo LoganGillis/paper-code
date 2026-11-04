@@ -6,6 +6,9 @@ import { DESK_PAGE_ID, buildDeskPage, isDeskPageId } from '@/lib/desk'
 import { GUIDE_PAGE_ID, buildGuidePage, isGuidePageId } from '@/lib/guide'
 import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
 import { formatJsonText } from '@shared/json-text'
+import { resolveJsonPaste } from '@/lib/json-actions'
+import { useJsonPreview } from '@/lib/json-preview'
+import { clearError, errorText, showError, showUndo } from '@/lib/notify'
 import { defaultPageTitle } from '@shared/titles'
 import { collectPages, pagesInFolder } from '@/lib/pages'
 import {
@@ -32,7 +35,6 @@ function pinDesk(tabs: TabRef[], hostSpace: string): TabRef[] {
 
 type WorkspaceContextValue = {
   ready: boolean
-  error: string | null
   spaces: Space[]
   trees: Record<string, SpaceTree>
   spaceId: string | null
@@ -103,7 +105,7 @@ type WorkspaceContextValue = {
     title: string,
     content?: string,
     options?: SelectPageOptions
-  ) => Promise<void>
+  ) => Promise<Page>
   importCsv: (spaceId: string, options?: SelectPageOptions) => Promise<void>
   pasteJsonFromClipboard: (spaceId: string, options?: SelectPageOptions) => Promise<void>
   duplicateSpace: (id: string) => Promise<void>
@@ -138,7 +140,7 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [ready, setReady] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const preview = useJsonPreview()
   const [spaces, setSpaces] = useState<Space[]>([])
   const [trees, setTrees] = useState<Record<string, SpaceTree>>({})
   const [spaceId, setSpaceId] = useState<string | null>(null)
@@ -595,7 +597,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
           window.localStorage.removeItem(BESIDE_KEY)
         }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Failed to load workspace')
+        showError(errorText(cause, 'Failed to load workspace'))
       } finally {
         setReady(true)
       }
@@ -649,6 +651,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       })
       await refreshTree(nextSpaceId)
       await selectPage(created.id, nextSpaceId, options)
+      return created
     },
     [activeFolderId, refreshTree, selectPage, spaceId]
   )
@@ -657,7 +660,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     async (nextSpaceId: string, options?: SelectPageOptions) => {
       const picked = await api.app.pickCsv()
       if (!picked) return
-      await createPage(nextSpaceId, 'csv', picked.name, picked.content, options)
+      if (picked.type === 'json') {
+        let content = picked.content
+        try {
+          content = formatJsonText(picked.content).value
+        } catch {
+          // Keep the file as it is; the editor marks the error.
+        }
+        await createPage(nextSpaceId, 'json', picked.name, content, options)
+      } else {
+        await createPage(nextSpaceId, 'csv', picked.name, picked.content, options)
+      }
+      clearError()
     },
     [createPage]
   )
@@ -732,20 +746,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       patchPage(id, { content: updated.content })
     },
     [patchPage]
-  )
-
-  const pasteJsonFromClipboard = useCallback(
-    async (nextSpaceId: string, options?: SelectPageOptions) => {
-      let formatted: string
-      try {
-        formatted = formatJsonText(await navigator.clipboard.readText())
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Clipboard is not JSON')
-        return
-      }
-      await createPage(nextSpaceId, 'json', defaultPageTitle('json'), formatted, options)
-    },
-    [createPage]
   )
 
   const savePageDescription = useCallback(
@@ -929,8 +929,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const exportBackup = useCallback(async () => {
     try {
       await api.spaces.exportBackup()
+      clearError()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to export backup')
+      showError(errorText(cause, 'Failed to export backup'))
     }
   }, [])
 
@@ -939,8 +940,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       const count = await api.spaces.importBackup()
       if (count == null) return
       await refreshSpaces()
+      clearError()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to import backup')
+      showError(errorText(cause, 'Failed to import backup'))
     }
   }, [refreshSpaces])
 
@@ -1014,6 +1016,43 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     [dropPages, openDesk, page, refreshTree, spaceId, spaces]
   )
 
+  const deletePageRef = useRef(deletePage)
+  useEffect(() => {
+    deletePageRef.current = deletePage
+  }, [deletePage])
+
+  const pasteJsonFromClipboard = useCallback(
+    async (nextSpaceId: string, options?: SelectPageOptions) => {
+      let raw: string
+      try {
+        raw = await navigator.clipboard.readText()
+      } catch (cause) {
+        showError(errorText(cause, 'Could not read the clipboard'))
+        return
+      }
+      const text = await resolveJsonPaste(raw, preview, (csv) => {
+        void createPage(nextSpaceId, 'csv', defaultPageTitle('csv'), csv, options).catch((cause) =>
+          showError(errorText(cause, 'Could not make a table'))
+        )
+      })
+      if (text == null) return
+      try {
+        const created = await createPage(
+          nextSpaceId,
+          'json',
+          defaultPageTitle('json'),
+          text,
+          options
+        )
+        clearError()
+        showUndo('Pasted into a new JSON page', () => deletePageRef.current(created.id))
+      } catch (cause) {
+        showError(errorText(cause, 'Could not create the page'))
+      }
+    },
+    [createPage, preview]
+  )
+
   const openBeside = useCallback(
     async (id: string, nextSpaceId: string) => {
       if (isDeskPageId(id) || isGuidePageId(id) || isBlockPageId(id)) return
@@ -1049,8 +1088,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const exportSpace = useCallback(async (id: string) => {
     try {
       await api.spaces.exportToFolder({ id })
+      clearError()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to export space')
+      showError(errorText(cause, 'Failed to export space'))
     }
   }, [])
 
@@ -1061,8 +1101,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       await refreshSpaces()
       setOpenSpaceIds((current) => [...current, space.id])
       setSpaceId(space.id)
+      clearError()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to import space')
+      showError(errorText(cause, 'Failed to import space'))
     }
   }, [refreshSpaces])
 
@@ -1085,7 +1126,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       ready,
-      error,
       spaces,
       trees,
       spaceId,
@@ -1168,7 +1208,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       duplicateFolder,
       duplicatePage,
       duplicateSpace,
-      error,
       exportBackup,
       exportSpace,
       flushSave,

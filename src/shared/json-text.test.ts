@@ -12,5 +12,5 @@ test('parseLooseJson unwraps escaped quotes and a surrounding string', () => {
 })
 
 test('formatJsonText pretty-prints a fenced blob', () => {
-  assert.equal(formatJsonText('```json\n{"b":2,"a":1}\n```'), '{\n  "b": 2,\n  "a": 1\n}\n')
+  assert.equal(formatJsonText('```json\n{"b":2,"a":1}\n```').value, '{\n  "b": 2,\n  "a": 1\n}\n')
 })

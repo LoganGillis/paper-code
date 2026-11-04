@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, type OpenDialogOptions } from 'electron'
 import { z } from 'zod'
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, getPrisma } from './db'
@@ -392,23 +392,25 @@ export const procedures: AppApi = {
       win?.webContents.session.addWordToSpellCheckerDictionary(data.word)
     },
     pickCsv: async () => {
+      const options: OpenDialogOptions = {
+        title: 'Open CSV or JSON',
+        properties: ['openFile'],
+        filters: [
+          { name: 'CSV or JSON', extensions: ['csv', 'tsv', 'txt', 'json'] },
+          { name: 'CSV', extensions: ['csv', 'tsv', 'txt'] },
+          { name: 'JSON', extensions: ['json'] }
+        ]
+      }
       const parent = BrowserWindow.getFocusedWindow()
       const picked = parent
-        ? await dialog.showOpenDialog(parent, {
-            title: 'Open CSV',
-            properties: ['openFile'],
-            filters: [{ name: 'CSV', extensions: ['csv', 'tsv', 'txt'] }]
-          })
-        : await dialog.showOpenDialog({
-            title: 'Open CSV',
-            properties: ['openFile'],
-            filters: [{ name: 'CSV', extensions: ['csv', 'tsv', 'txt'] }]
-          })
+        ? await dialog.showOpenDialog(parent, options)
+        : await dialog.showOpenDialog(options)
       const filePath = picked.filePaths[0]
       if (picked.canceled || !filePath) return null
       return {
-        name: basename(filePath).replace(/\.(csv|tsv|txt)$/i, ''),
-        content: await readFile(filePath, 'utf8')
+        name: basename(filePath).replace(/\.(csv|tsv|txt|json)$/i, ''),
+        content: await readFile(filePath, 'utf8'),
+        type: /\.json$/i.test(filePath) ? ('json' as const) : ('csv' as const)
       }
     }
   },

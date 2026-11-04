@@ -132,7 +132,7 @@ export type TabRef = {
 export type AppApi = {
   app: {
     getConfig: () => Promise<AppConfig>
-    pickCsv: () => Promise<{ name: string; content: string } | null>
+    pickCsv: () => Promise<{ name: string; content: string; type: 'csv' | 'json' } | null>
     getUpdateStatus: () => Promise<UpdateStatus>
     checkForUpdates: () => Promise<UpdateStatus>
     quitAndInstall: () => Promise<void>

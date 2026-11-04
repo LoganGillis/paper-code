@@ -1,14 +1,16 @@
 import { useEffect } from 'react'
 import { displayTitle } from '@shared/titles'
+import { JsonPreviewProvider } from '@/components/json-preview-dialog'
 import { PageView } from '@/components/page-view'
 import { SavedFlashProvider } from '@/components/saved-flash'
 import { Sidebar } from '@/components/sidebar'
 import { TabBar } from '@/components/tab-bar'
+import { Toaster } from '@/components/ui/sonner'
 import { isDeskPageId } from '@/lib/desk'
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace'
 
 function Shell(): React.JSX.Element {
-  const { ready, error, page } = useWorkspace()
+  const { ready, page } = useWorkspace()
 
   useEffect(() => {
     if (!window.api?.setTitle) return
@@ -32,11 +34,6 @@ function Shell(): React.JSX.Element {
       <Sidebar />
       <main className="paper-page flex min-w-0 flex-1 flex-col">
         <TabBar />
-        {error ? (
-          <p role="alert" className="px-8 pt-6 text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
         <div className="min-h-0 flex-1">
           <PageView />
         </div>
@@ -47,11 +44,14 @@ function Shell(): React.JSX.Element {
 
 function App(): React.JSX.Element {
   return (
-    <WorkspaceProvider>
-      <SavedFlashProvider>
-        <Shell />
-      </SavedFlashProvider>
-    </WorkspaceProvider>
+    <JsonPreviewProvider>
+      <WorkspaceProvider>
+        <SavedFlashProvider>
+          <Shell />
+        </SavedFlashProvider>
+      </WorkspaceProvider>
+      <Toaster position="bottom-right" />
+    </JsonPreviewProvider>
   )
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { parseCsv, serializeCsv } from '@shared/csv'
+import { parseClipboardGrid, parseCsv, serializeCsv } from '@shared/csv'
 import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
@@ -191,11 +191,7 @@ export function CsvEditor({
 
   const pasteAtSelection = useCallback(async () => {
     const text = await navigator.clipboard.readText()
-    const pasted = text
-      .replace(/\r/g, '')
-      .split('\n')
-      .filter((line, index, all) => !(index === all.length - 1 && line === ''))
-      .map((line) => line.split('\t'))
+    const pasted = parseClipboardGrid(text)
     if (pasted.length === 0) return
     const next = cloneGrid(rows)
     pasted.forEach((line, rOffset) => {

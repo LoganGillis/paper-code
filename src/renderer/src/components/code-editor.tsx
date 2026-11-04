@@ -6,7 +6,8 @@ import { json } from '@codemirror/lang-json'
 import { EditorView, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
 import { definitionAt, importSpecAt, renameAt } from '@shared/js-refs'
-import { formatJsonText } from '@shared/json-text'
+import { jsonErrorAt } from '@shared/json-text'
+import { linter, lintGutter, type Diagnostic } from '@codemirror/lint'
 import { createPaperAutocomplete } from '@/lib/paper-completions'
 import { useWorkspace } from '@/lib/workspace'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -119,6 +120,27 @@ function paperTheme(dark: boolean, accent: string): ReturnType<typeof EditorView
   )
 }
 
+const jsonLint = [
+  linter(
+    (view): Diagnostic[] => {
+      const text = view.state.doc.toString()
+      const at = jsonErrorAt(text)
+      if (!at) return []
+      const from = Math.min(at.offset, text.length)
+      return [
+        {
+          from,
+          to: Math.min(from + 1, text.length),
+          severity: 'error',
+          message: at.message
+        }
+      ]
+    },
+    { delay: 300 }
+  ),
+  lintGutter()
+]
+
 export function CodeEditor({
   value,
   language,
@@ -128,7 +150,9 @@ export function CodeEditor({
   onRun,
   restoreFocus = false,
   compact = false,
-  readOnly = false
+  readOnly = false,
+  onFormat,
+  onEditorView
 }: {
   value: string
   language: 'javascript' | 'typescript' | 'json'
@@ -139,6 +163,9 @@ export function CodeEditor({
   restoreFocus?: boolean
   compact?: boolean
   readOnly?: boolean
+  /** Shown as Format in the JSON context menu. */
+  onFormat?: () => void
+  onEditorView?: (view: EditorView | null) => void
 }): React.JSX.Element {
   const { theme } = useTheme()
   const dark = theme === 'dark'
@@ -170,13 +197,10 @@ export function CodeEditor({
   const [view, setView] = useState<EditorView | null>(null)
   const syntaxError = useMemo(() => {
     if (language === 'json') {
-      if (!value.trim()) return null
-      try {
-        JSON.parse(value)
-        return null
-      } catch (cause) {
-        return cause instanceof Error ? cause.message : 'Invalid JSON'
-      }
+      const at = jsonErrorAt(value)
+      if (!at) return null
+      const line = value.slice(0, at.offset).split('\n').length
+      return `Line ${line}: ${at.message}`
     }
     try {
       transform(value, {
@@ -243,9 +267,9 @@ export function CodeEditor({
 
   const extensions = useMemo(
     () => [
-      language === 'json'
-        ? json()
-        : javascript({ typescript: language === 'typescript', jsx: false }),
+      ...(language === 'json'
+        ? [json(), ...jsonLint]
+        : [javascript({ typescript: language === 'typescript', jsx: false })]),
       ...(language === 'json' ? [] : createPaperAutocomplete(pageTitles.csv, pageTitles.json)),
       EditorView.domEventHandlers({
         mousedown(event, editor) {
@@ -365,18 +389,13 @@ export function CodeEditor({
           >
             Go to definition
           </button>
-          {language === 'json' ? (
+          {language === 'json' && onFormat ? (
             <button
               type="button"
               className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent"
               onClick={() => {
-                try {
-                  onChange(formatJsonText(value))
-                } catch {
-                  setMenu(null)
-                  return
-                }
                 setMenu(null)
+                onFormat()
               }}
             >
               Format
@@ -418,7 +437,10 @@ export function CodeEditor({
           searchKeymap: false
         }}
         extensions={extensions}
-        onCreateEditor={(next) => setView(next)}
+        onCreateEditor={(next) => {
+          setView(next)
+          onEditorView?.(next)
+        }}
         onChange={onChange}
       />
     </div>
