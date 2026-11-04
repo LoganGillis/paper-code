@@ -1,5 +1,12 @@
 import { inspect } from 'node:util'
 
+const secretBags = new WeakSet<object>()
+
+/** True for the `$secrets` proxy, which must never be walked or sent out of the runner. */
+export function isSecretBag(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && secretBags.has(value)
+}
+
 export function installSecretHelpers(
   target: Record<string, unknown>,
   bag: Record<string, string>
@@ -43,6 +50,8 @@ export function installSecretHelpers(
       return undefined
     }
   })
+
+  secretBags.add($secrets)
 
   Object.defineProperties(target, {
     $secret: { configurable: true, enumerable: true, value: $secret },

@@ -1,25 +1,31 @@
 import { parentPort } from 'node:worker_threads'
-import type { Page } from '../shared/api'
-import { executeSnippet } from './runner'
+import { executeSnippet, type RunContext } from './runner'
+import { cloneableResult } from './run-serialize'
 
 type Request = {
   language: 'javascript' | 'typescript'
   source: string
-  context: {
-    page: Page
-    pages: Page[]
-    spaces?: Array<{ id: string; name: string }>
-    secrets?: Record<string, string>
+  context: RunContext
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function reply(payload: unknown): void {
+  try {
+    parentPort?.postMessage(payload)
+  } catch (cause) {
+    parentPort?.postMessage({
+      ok: false,
+      error: `Could not send the result back (${message(cause)})`
+    })
   }
 }
 
-parentPort?.on('message', (message: Request) => {
-  void executeSnippet(message.language, message.source, message.context).then(
-    (result) => parentPort?.postMessage({ ok: true, result }),
-    (error: unknown) =>
-      parentPort?.postMessage({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
-      })
+parentPort?.once('message', (request: Request) => {
+  void executeSnippet(request.language, request.source, request.context).then(
+    (result) => reply({ ok: true, result: cloneableResult(result) }),
+    (error: unknown) => reply({ ok: false, error: message(error) })
   )
 })

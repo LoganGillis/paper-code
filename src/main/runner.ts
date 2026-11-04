@@ -1,7 +1,13 @@
 import { inspect } from 'node:util'
 import vm from 'node:vm'
 import { transform } from 'sucrase'
-import { installCsvHelpers, resolvePage, tableFromPage } from '../shared/helpers/csv'
+import {
+  installCsvHelpers,
+  requirePage,
+  tableFromPage,
+  type FolderRef,
+  type SpaceRef
+} from '../shared/helpers/csv'
 import { installDateHelpers } from '../shared/helpers/dates'
 import { $Table } from '../shared/helpers/table'
 import { parseLooseJson } from '../shared/json-text'
@@ -9,6 +15,26 @@ import { installSecretHelpers } from '../shared/helpers/secret-bag'
 import type { Page, RunLog, RunResult } from '../shared/api'
 
 const RUN_TIMEOUT_MS = 8_000
+const MODULE_TYPES = ['javascript', 'typescript', 'csv', 'json'] as const
+
+export type RunContext = {
+  page: Page
+  pages: Page[]
+  spaces?: SpaceRef[]
+  folders?: FolderRef[]
+  secrets?: Record<string, string>
+}
+
+type Scope = { page: Page; pages: Page[]; spaces: SpaceRef[]; folders: FolderRef[] }
+
+function findModule(spec: string, scope: Scope): Page {
+  return requirePage(spec, scope.page, scope.pages, scope.spaces, {
+    types: MODULE_TYPES,
+    folders: scope.folders,
+    label: 'importable',
+    missing: `Cannot find module "${spec}"`
+  })
+}
 
 function isTable(value: unknown): value is $Table {
   return value instanceof $Table
@@ -74,25 +100,25 @@ function jsonFromPage(page: Page): unknown {
   }
 }
 
-function installJsonHelpers(
-  target: Record<string, unknown>,
-  context: { page: Page; pages: Page[]; spaces: Array<{ id: string; name: string }> }
-): void {
-  const load = (spec: string): unknown => {
-    const found = resolvePage(spec, context.page, context.pages, context.spaces)
-    if (!found) throw new Error(`Cannot find JSON "${spec}"`)
-    return jsonFromPage(found)
-  }
+function installJsonHelpers(target: Record<string, unknown>, scope: Scope): void {
+  const load = (spec: string): unknown =>
+    jsonFromPage(
+      requirePage(spec, scope.page, scope.pages, scope.spaces, {
+        types: ['json'],
+        folders: scope.folders,
+        label: 'JSON',
+        missing: `Cannot find JSON "${spec}"`
+      })
+    )
   Object.defineProperty(target, '$json', { configurable: true, enumerable: true, value: load })
 }
 
 function evaluateModule(
   page: Page,
-  pages: Page[],
+  scope: Omit<Scope, 'page'>,
   logs: RunResult['logs'],
   visiting: Set<string>,
-  secrets: Record<string, string>,
-  spaces: Array<{ id: string; name: string }>
+  secrets: Record<string, string>
 ): unknown {
   if (page.type === 'csv') {
     return tableFromPage(page)
@@ -110,6 +136,7 @@ function evaluateModule(
 
   const compiled = compile(page.content, page.type)
   const module = { exports: {} as Record<string, unknown> }
+  const local: Scope = { ...scope, page }
   const sandbox: Record<string, unknown> = {
     module,
     exports: module.exports,
@@ -118,17 +145,12 @@ function evaluateModule(
     clearTimeout,
     setInterval,
     clearInterval,
-    require: (spec: string) => {
-      const target = resolvePage(spec, page, pages, spaces)
-      if (!target) {
-        throw new Error(`Cannot find module "${spec}"`)
-      }
-      return evaluateModule(target, pages, logs, visiting, secrets, spaces)
-    }
+    require: (spec: string) =>
+      evaluateModule(findModule(spec, local), scope, logs, visiting, secrets)
   }
   installDateHelpers(sandbox)
-  installCsvHelpers(sandbox, { page, pages, spaces })
-  installJsonHelpers(sandbox, { page, pages, spaces })
+  installCsvHelpers(sandbox, local)
+  installJsonHelpers(sandbox, local)
   installSecretHelpers(sandbox, secrets)
   sandbox.exports = module.exports
   vm.runInNewContext(compiled, sandbox, { timeout: RUN_TIMEOUT_MS, displayErrors: true })
@@ -136,19 +158,20 @@ function evaluateModule(
   return module.exports
 }
 
+/** Compiles and runs one snippet in a fresh `vm` context. Only call this inside the run worker. */
 export async function executeSnippet(
   language: 'javascript' | 'typescript',
   source: string,
-  context: {
-    page: Page
-    pages: Page[]
-    spaces?: Array<{ id: string; name: string }>
-    secrets?: Record<string, string>
-  }
+  context: RunContext
 ): Promise<RunResult> {
-  const spaces = context.spaces ?? []
   const logs: RunResult['logs'] = []
   const current: Page = { ...context.page, content: source, type: language }
+  const scope: Scope = {
+    page: current,
+    pages: context.pages,
+    spaces: context.spaces ?? [],
+    folders: context.folders ?? []
+  }
 
   try {
     const compiled = compile(source, language)
@@ -161,24 +184,18 @@ export async function executeSnippet(
       clearTimeout,
       setInterval,
       clearInterval,
-      require: (spec: string) => {
-        const target = resolvePage(spec, current, context.pages, spaces)
-        if (!target) {
-          throw new Error(`Cannot find module "${spec}"`)
-        }
-        return evaluateModule(
-          target,
-          context.pages,
+      require: (spec: string) =>
+        evaluateModule(
+          findModule(spec, scope),
+          scope,
           logs,
           new Set([current.id]),
-          context.secrets ?? {},
-          spaces
+          context.secrets ?? {}
         )
-      }
     }
     installDateHelpers(sandbox)
-    installCsvHelpers(sandbox, { page: current, pages: context.pages, spaces })
-    installJsonHelpers(sandbox, { page: current, pages: context.pages, spaces })
+    installCsvHelpers(sandbox, scope)
+    installJsonHelpers(sandbox, scope)
     installSecretHelpers(sandbox, context.secrets ?? {})
     sandbox.exports = module.exports
 

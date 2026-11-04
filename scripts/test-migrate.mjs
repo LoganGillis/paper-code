@@ -5,7 +5,12 @@ const require = createRequire(import.meta.url)
 const electron = require('electron')
 const result = spawnSync(
   electron,
-  ['./node_modules/tsx/dist/cli.mjs', '--test', 'src/main/migrate.test.ts'],
+  [
+    './node_modules/tsx/dist/cli.mjs',
+    '--test',
+    'src/main/migrate.test.ts',
+    'src/main/folder-trash.test.ts'
+  ],
   {
     stdio: 'inherit',
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }

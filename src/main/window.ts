@@ -1,7 +1,18 @@
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { openExternalSafely } from './external'
+
+function sameDocument(current: string, next: string): boolean {
+  try {
+    const a = new URL(current)
+    const b = new URL(next)
+    return a.origin === b.origin && a.pathname === b.pathname
+  } catch {
+    return false
+  }
+}
 
 export function createPaperWindow(options: {
   title: string
@@ -43,8 +54,14 @@ export function createPaperWindow(options: {
   })
 
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalSafely(details.url)
     return { action: 'deny' }
+  })
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (sameDocument(win.webContents.getURL(), url)) return
+    event.preventDefault()
+    openExternalSafely(url)
   })
 
   return win

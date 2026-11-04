@@ -23,10 +23,19 @@ function page(input: Partial<Page> & Pick<Page, 'id' | 'title' | 'spaceId'>): Pa
 }
 
 test('splitImportSpec treats a slash as space/title', () => {
-  assert.deepEqual(splitImportSpec('orders'), { spaceName: null, title: 'orders' })
-  assert.deepEqual(splitImportSpec('./orders.csv'), { spaceName: null, title: 'orders.csv' })
+  assert.deepEqual(splitImportSpec('orders'), {
+    spaceName: null,
+    folderPath: null,
+    title: 'orders'
+  })
+  assert.deepEqual(splitImportSpec('./orders.csv'), {
+    spaceName: null,
+    folderPath: null,
+    title: 'orders.csv'
+  })
   assert.deepEqual(splitImportSpec('Workshop/orders'), {
     spaceName: 'Workshop',
+    folderPath: null,
     title: 'orders'
   })
 })
@@ -46,7 +55,7 @@ test('resolvePage stays in the current space unless a space is named', () => {
   assert.equal(resolvePage('Missing/orders', here, pages, spaces), null)
 })
 
-test('resolvePage prefers the same folder and skips archived pages', () => {
+test('resolvePage reports same-titled pages as ambiguous and skips archived pages', () => {
   const here = page({
     id: 'script',
     title: 'script',
@@ -69,5 +78,6 @@ test('resolvePage prefers the same folder and skips archived pages', () => {
     archived: true
   })
 
-  assert.equal(resolvePage('sales', here, [here, root, nested, archived])?.id, 'near')
+  assert.throws(() => resolvePage('sales', here, [here, root, nested, archived]), /matches 2/)
+  assert.equal(resolvePage('sales', here, [here, nested, archived])?.id, 'near')
 })

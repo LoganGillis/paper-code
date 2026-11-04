@@ -3,9 +3,10 @@ import { dirname, extname, join } from 'node:path'
 import { dialog, BrowserWindow } from 'electron'
 import { docToMarkdown, markdownToDoc } from '../shared/markdown-transfer'
 import type { PageType } from '../shared/api'
-import { PAGE_TYPES } from '../shared/page-types'
+import { extensionForType, isPageType } from '../shared/page-types'
 import type { IconColorId, IconName } from '../shared/icons'
 import { getPrisma } from './db'
+import { resolveInside } from './safe-path'
 
 type Manifest = {
   version: 1
@@ -32,8 +33,8 @@ function safeSegment(value: string): string {
   return cleaned || 'Untitled'
 }
 
-function extFor(type: PageType): string {
-  return PAGE_TYPES[type].extension
+function extFor(type: string): string {
+  return extensionForType(type)
 }
 
 function fileBody(type: PageType, content: string): string {
@@ -124,7 +125,7 @@ export async function exportSpace(spaceId: string): Promise<string | null> {
   for (const page of space.pages) {
     if (page.archived) continue
     const dir = page.folderId ? (folderPath.get(page.folderId) ?? '') : ''
-    const path = uniquePath(used, dir, safeSegment(page.title), extFor(page.type as PageType))
+    const path = uniquePath(used, dir, safeSegment(page.title), extFor(page.type))
     const abs = join(root, ...path.split('/'))
     await mkdir(dirname(abs), { recursive: true })
     await writeFile(abs, fileBody(page.type as PageType, page.content), 'utf8')
@@ -151,6 +152,17 @@ export async function importSpace(): Promise<string | null> {
   const manifest = JSON.parse(raw) as Manifest
   if (manifest.version !== 1 || !manifest.space?.name) {
     throw new Error('Unsupported or damaged Paper export.')
+  }
+
+  const files = new Map<string, string>()
+  for (const item of manifest.pages ?? []) {
+    if (!isPageType(item.type)) {
+      throw new Error(`"${item.path}" has an unknown page type (${String(item.type)}).`)
+    }
+    if (typeof item.path !== 'string' || !item.path.trim()) {
+      throw new Error('A page in paper.json has no path.')
+    }
+    files.set(item.path, await resolveInside(source, item.path))
   }
 
   const prisma = getPrisma()
@@ -183,8 +195,8 @@ export async function importSpace(): Promise<string | null> {
 
   const pageIds = new Map<string, string>()
   for (const item of manifest.pages ?? []) {
-    const abs = join(source, ...item.path.split('/'))
-    const rawFile = await readFile(abs, 'utf8').catch(() => '')
+    const abs = files.get(item.path)
+    const rawFile = abs ? await readFile(abs, 'utf8').catch(() => '') : ''
     const dir = dirname(item.path).replace(/^\.$/, '')
     const created = await prisma.page.create({
       data: {
@@ -357,6 +369,13 @@ export async function importBackup(): Promise<number | null> {
   if (backup.version !== 1 || !Array.isArray(backup.spaces)) {
     throw new Error('Unsupported or damaged Paper backup.')
   }
+  for (const item of backup.spaces) {
+    for (const page of item.pages ?? []) {
+      if (!isPageType(page.type)) {
+        throw new Error(`"${page.title}" has an unknown page type (${String(page.type)}).`)
+      }
+    }
+  }
   const prisma = getPrisma()
   let count = 0
   for (const item of backup.spaces) {
@@ -377,9 +396,7 @@ export async function importBackup(): Promise<number | null> {
     })
     let remaining = [...folders]
     while (remaining.length > 0) {
-      const next = remaining.filter(
-        (folder) => !folder.parentId || folderIds.has(folder.parentId)
-      )
+      const next = remaining.filter((folder) => !folder.parentId || folderIds.has(folder.parentId))
       if (next.length === 0) break
       for (const folder of next) {
         const created = await prisma.folder.create({

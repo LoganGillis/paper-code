@@ -27,6 +27,29 @@ export function collectPages(trees: Record<string, SpaceTree>): PageHit[] {
   return items
 }
 
+/** Ids of every live page inside a folder and its subfolders. */
+export function pagesInFolder(trees: Record<string, SpaceTree>, folderId: string): string[] {
+  const ids: string[] = []
+  const collect = (folder: FolderNode): void => {
+    for (const page of folder.pages) ids.push(page.id)
+    for (const child of folder.folders) collect(child)
+  }
+  const find = (folders: FolderNode[]): boolean => {
+    for (const folder of folders) {
+      if (folder.id === folderId) {
+        collect(folder)
+        return true
+      }
+      if (find(folder.folders)) return true
+    }
+    return false
+  }
+  for (const tree of Object.values(trees)) {
+    if (find(tree.folders)) break
+  }
+  return ids
+}
+
 export function findPageHit(trees: Record<string, SpaceTree>, pageId: string): PageHit | undefined {
   const hit = collectPages(trees).find((item) => item.page.id === pageId)
   if (hit) return hit

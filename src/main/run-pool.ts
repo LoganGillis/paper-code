@@ -1,17 +1,24 @@
 import { Worker } from 'node:worker_threads'
 import { join } from 'node:path'
-import type { Page, RunResult } from '../shared/api'
-import { executeSnippet } from './runner'
+import type { RunResult } from '../shared/api'
+import type { RunContext } from './runner'
 
 const RUN_TIMEOUT_MS = 8_000
 
-type RunContext = {
-  page: Page
-  pages: Page[]
-  spaces?: Array<{ id: string; name: string }>
-  secrets?: Record<string, string>
+type WorkerReply = { ok: boolean; result?: RunResult; error?: string }
+
+function failure(error: string): RunResult {
+  return { logs: [], error }
 }
 
+function describe(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+/**
+ * Runs a snippet in a dedicated worker. Scripts never run in the main process: if the worker
+ * cannot start, crashes, or cannot send its result, the run fails with an error instead.
+ */
 export function executeSnippetAsync(
   language: 'javascript' | 'typescript',
   source: string,
@@ -23,26 +30,42 @@ export function executeSnippetAsync(
       worker = new Worker(join(__dirname, 'run-worker.js'))
     } catch (cause) {
       console.error('Script worker failed to start', cause)
-      void executeSnippet(language, source, context).then(resolve)
+      resolve(failure(`The script runner could not start (${describe(cause)})`))
       return
     }
 
-    const timer = setTimeout(() => {
+    let settled = false
+    const finish = (result: RunResult): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
       void worker.terminate()
-      resolve({ logs: [], error: `Timed out after ${RUN_TIMEOUT_MS}ms` })
+      resolve(result)
+    }
+
+    const timer = setTimeout(() => {
+      finish(failure(`Timed out after ${RUN_TIMEOUT_MS}ms`))
     }, RUN_TIMEOUT_MS + 500)
 
-    worker.once('message', (message: { ok: boolean; result?: RunResult; error?: string }) => {
-      clearTimeout(timer)
-      void worker.terminate()
-      if (message.ok && message.result) resolve(message.result)
-      else resolve({ logs: [], error: message.error ?? 'Script failed' })
+    worker.once('message', (message: WorkerReply) => {
+      if (message.ok && message.result) finish(message.result)
+      else finish(failure(message.error ?? 'Script failed'))
+    })
+    worker.once('messageerror', (error) => {
+      finish(failure(`The script result could not be read (${describe(error)})`))
     })
     worker.once('error', (error) => {
-      clearTimeout(timer)
       console.error('Script worker error', error)
-      void executeSnippet(language, source, context).then(resolve)
+      finish(failure(`The script runner crashed (${describe(error)})`))
     })
-    worker.postMessage({ language, source, context })
+    worker.once('exit', (code) => {
+      finish(failure(`The script runner stopped unexpectedly (exit code ${code})`))
+    })
+
+    try {
+      worker.postMessage({ language, source, context })
+    } catch (cause) {
+      finish(failure(`The script could not be sent to the runner (${describe(cause)})`))
+    }
   })
 }

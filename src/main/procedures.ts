@@ -29,7 +29,8 @@ import type {
   SpaceTree
 } from '../shared/api'
 import { buildGuideDataPages, isGuideDataPageId, isGuidePageId } from '../shared/guide-data'
-import { PAGE_TYPE_IDS } from '../shared/page-types'
+import { PAGE_TYPE_IDS, PAGE_TYPES } from '../shared/page-types'
+import { assertEditable, assertTypeChange, trashFolderTree, uniqueTitle } from './page-rules'
 
 const idInput = z.object({ id: z.string().min(1) })
 const pageTypes = PAGE_TYPE_IDS
@@ -592,7 +593,7 @@ export const procedures: AppApi = {
     },
     delete: async (input) => {
       const data = idInput.parse(input)
-      await getPrisma().folder.delete({ where: { id: data.id } })
+      await getPrisma().$transaction((tx) => trashFolderTree(tx, data.id, new Date()))
     },
     duplicate: async (input) => {
       const data = idInput.parse(input)
@@ -671,9 +672,21 @@ export const procedures: AppApi = {
       const parent = data.folderId
         ? await getPrisma().folder.findUnique({ where: { id: data.folderId } })
         : await getPrisma().space.findUnique({ where: { id: data.spaceId } })
+      const title =
+        data.title === PAGE_TYPES[data.type].defaultTitle
+          ? uniqueTitle(
+              data.title,
+              (
+                await getPrisma().page.findMany({
+                  where: { spaceId: data.spaceId, deletedAt: null },
+                  select: { title: true }
+                })
+              ).map((row) => row.title)
+            )
+          : data.title
       const page = await getPrisma().page.create({
         data: {
-          title: data.title,
+          title,
           type: data.type,
           content,
           description: '',
@@ -720,11 +733,9 @@ export const procedures: AppApi = {
         .parse(input)
       const prisma = getPrisma()
       const previous = await prisma.page.findUniqueOrThrow({ where: { id: data.id } })
-      if (
-        data.content !== undefined &&
-        data.content !== previous.content &&
-        !previous.deletedAt
-      ) {
+      assertEditable(previous, data)
+      if (data.type !== undefined) assertTypeChange(previous.type, data.type)
+      if (data.content !== undefined && data.content !== previous.content && !previous.deletedAt) {
         await snapshotPage(previous)
       }
       const page = await prisma.page.update({
@@ -777,13 +788,12 @@ export const procedures: AppApi = {
       return serializeVersion(await snapshotPage(page, true))
     },
     restoreVersion: async (input) => {
-      const data = z
-        .object({ id: z.string().min(1), versionId: z.string().min(1) })
-        .parse(input)
+      const data = z.object({ id: z.string().min(1), versionId: z.string().min(1) }).parse(input)
       const prisma = getPrisma()
       const page = await prisma.page.findUniqueOrThrow({ where: { id: data.id } })
       const version = await prisma.pageVersion.findUniqueOrThrow({ where: { id: data.versionId } })
       if (version.pageId !== page.id) throw new Error('Version does not belong to this page.')
+      assertEditable(page, version)
       await snapshotPage(page, true)
       const updated = await prisma.page.update({
         where: { id: page.id },
@@ -838,12 +848,15 @@ export const procedures: AppApi = {
           pageId: z.string().min(1)
         })
         .parse(input)
-      const [spacePages, allPages, spaces] = await Promise.all([
+      const [spacePages, allPages, spaces, folders] = await Promise.all([
         getPrisma().page.findMany({
           where: { spaceId: data.spaceId, archived: false, deletedAt: null }
         }),
         getPrisma().page.findMany({ where: { archived: false, deletedAt: null } }),
-        getPrisma().space.findMany()
+        getPrisma().space.findMany(),
+        getPrisma().folder.findMany({
+          select: { id: true, name: true, parentId: true, spaceId: true }
+        })
       ])
       const page = spacePages.find((item) => item.id === data.pageId)
       const serialized = allPages.map(serializePage)
@@ -873,6 +886,7 @@ export const procedures: AppApi = {
         page: current,
         pages: pagesForRun,
         spaces: spaces.map((space) => ({ id: space.id, name: space.name })),
+        folders,
         secrets: await loadSecretsForRun(data.spaceId)
       })
       if (

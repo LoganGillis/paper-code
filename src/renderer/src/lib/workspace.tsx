@@ -7,7 +7,7 @@ import { GUIDE_PAGE_ID, buildGuidePage, isGuidePageId } from '@/lib/guide'
 import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
 import { formatJsonText } from '@shared/json-text'
 import { defaultPageTitle } from '@shared/titles'
-import { collectPages } from '@/lib/pages'
+import { collectPages, pagesInFolder } from '@/lib/pages'
 import {
   blockText,
   buildBlockPage,
@@ -91,10 +91,7 @@ type WorkspaceContextValue = {
   exportBackup: () => Promise<void>
   importBackup: () => Promise<void>
   flushSave: (id: string) => Promise<void>
-  updatePageFlags: (
-    id: string,
-    flags: { locked?: boolean; spellcheck?: boolean }
-  ) => Promise<void>
+  updatePageFlags: (id: string, flags: { locked?: boolean; spellcheck?: boolean }) => Promise<void>
   restorePageVersion: (id: string, versionId: string) => Promise<void>
   changePageType: (id: string, type: PageType) => Promise<void>
   selectFolder: (spaceId: string, folderId: string | null) => void
@@ -320,10 +317,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       if (current.some((tab) => tab.pageId === id)) return pinDesk(current, nextSpaceId)
       const activeId = pageRef.current?.id
       const canReplace = Boolean(
-        activeId &&
-          !isDeskPageId(activeId) &&
-          !newTab &&
-          !pinnedTabIds.includes(activeId)
+        activeId && !isDeskPageId(activeId) && !newTab && !pinnedTabIds.includes(activeId)
       )
       let next: TabRef[]
       if (canReplace && activeId) {
@@ -749,13 +743,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         setError(cause instanceof Error ? cause.message : 'Clipboard is not JSON')
         return
       }
-      if (page?.type === 'json' && page.spaceId === nextSpaceId) {
-        await savePageContent(page.id, formatted)
-        return
-      }
       await createPage(nextSpaceId, 'json', defaultPageTitle('json'), formatted, options)
     },
-    [createPage, page, savePageContent]
+    [createPage]
   )
 
   const savePageDescription = useCallback(
@@ -846,11 +836,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const deleteFolder = useCallback(
     async (id: string) => {
+      const trashed = pagesInFolder(trees, id)
       await api.folders.delete({ id })
+      dropPages(trashed)
       if (activeFolderId === id) setActiveFolderId(null)
       if (spaceId) await refreshTree(spaceId)
     },
-    [activeFolderId, refreshTree, spaceId]
+    [activeFolderId, dropPages, refreshTree, spaceId, trees]
   )
 
   const archivePage = useCallback(

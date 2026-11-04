@@ -68,4 +68,14 @@ export const PAGE_TYPES: Record<PageType, PageTypeInfo> = {
   }
 }
 
-export const PAGE_TYPE_IDS = ['markdown', 'javascript', 'typescript', 'csv', 'json'] as const
+export const PAGE_TYPE_IDS = Object.keys(PAGE_TYPES) as [PageType, ...PageType[]]
+
+/** True when `value` is one of the page types Paper knows (own keys only). */
+export function isPageType(value: unknown): value is PageType {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PAGE_TYPES, value)
+}
+
+/** File extension for a stored page type, `.md` when the type is unknown. */
+export function extensionForType(type: string): string {
+  return isPageType(type) ? PAGE_TYPES[type].extension : '.md'
+}

@@ -13,7 +13,8 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts src/shared/json-text.test.ts src/shared/js-refs.test.ts && node scripts/test-migrate.mjs",
+    "test:unit": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts src/shared/json-text.test.ts src/shared/js-refs.test.ts && vitest run",
+    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts src/shared/json-text.test.ts src/shared/js-refs.test.ts && vitest run && node scripts/test-migrate.mjs",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3 --build-from-source",
     "dev": "electron-vite dev",
@@ -99,6 +100,7 @@
     "tailwindcss": "^4.1.12",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^3.2.7"
   }
 }
