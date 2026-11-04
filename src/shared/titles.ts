@@ -1,18 +1,14 @@
 import type { PageType } from './api'
+import { PAGE_TYPES } from './page-types'
 
 export function pageTypeLabel(type: PageType): string {
-  if (type === 'javascript') return 'JS'
-  if (type === 'typescript') return 'TS'
-  if (type === 'csv') return 'CSV'
-  return 'MD'
+  return PAGE_TYPES[type].label
 }
 
 export function displayTitle(title: string): string {
-  return title.replace(/\.(js|jsx|ts|tsx|mjs|cjs|csv|md|markdown)$/i, '')
+  return title.replace(/\.(js|jsx|ts|tsx|mjs|cjs|csv|json|md|markdown)$/i, '')
 }
 
 export function defaultPageTitle(type: PageType): string {
-  if (type === 'javascript' || type === 'typescript') return 'Script'
-  if (type === 'csv') return 'Table'
-  return 'Untitled'
+  return PAGE_TYPES[type].defaultTitle
 }

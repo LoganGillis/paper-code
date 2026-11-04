@@ -3,6 +3,7 @@ import { dirname, extname, join } from 'node:path'
 import { dialog, BrowserWindow } from 'electron'
 import { docToMarkdown, markdownToDoc } from '../shared/markdown-transfer'
 import type { PageType } from '../shared/api'
+import { PAGE_TYPES } from '../shared/page-types'
 import type { IconColorId, IconName } from '../shared/icons'
 import { getPrisma } from './db'
 
@@ -32,10 +33,7 @@ function safeSegment(value: string): string {
 }
 
 function extFor(type: PageType): string {
-  if (type === 'javascript') return '.js'
-  if (type === 'typescript') return '.ts'
-  if (type === 'csv') return '.csv'
-  return '.md'
+  return PAGE_TYPES[type].extension
 }
 
 function fileBody(type: PageType, content: string): string {

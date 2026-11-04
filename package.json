@@ -1,7 +1,7 @@
 {
   "name": "paper",
   "productName": "Paper",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "A notebook for notes, tables, and scripts.",
   "main": "./out/main/index.js",
   "author": "Logan Gillis",
@@ -13,7 +13,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts && node scripts/test-migrate.mjs",
+    "test": "tsx --test src/shared/markdown-transfer.test.ts src/shared/helpers/csv.test.ts src/shared/json-text.test.ts src/shared/js-refs.test.ts && node scripts/test-migrate.mjs",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3 --build-from-source",
     "dev": "electron-vite dev",
@@ -33,6 +33,7 @@
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/search": "^6.7.1",
     "@codemirror/state": "^6.7.1",

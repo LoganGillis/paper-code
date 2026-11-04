@@ -80,7 +80,7 @@ export function Sidebar(): React.JSX.Element {
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-1 py-1">
+        <div className="flex flex-col gap-2 py-1.5">
           {spaces.length === 0 ? (
             <div className="flex min-h-[12rem] items-center justify-center px-4 text-center text-sm text-muted-foreground">
               Create a space to begin.

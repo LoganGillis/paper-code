@@ -17,6 +17,7 @@ import {
   DATE_GLOBALS,
   DATE_MEMBERS,
   DATE_ROOTS,
+  JSON_GLOBALS,
   SECRET_GLOBALS,
   TABLE_MEMBERS,
   TABLE_ROOTS,
@@ -56,8 +57,8 @@ function toCompletion(doc: HelperDoc, boost: number): Completion {
   return base
 }
 
-const dollarCompletions = [...DATE_GLOBALS, ...CSV_GLOBALS, ...SECRET_GLOBALS].map((doc) =>
-  toCompletion(doc, 99)
+const dollarCompletions = [...DATE_GLOBALS, ...CSV_GLOBALS, ...JSON_GLOBALS, ...SECRET_GLOBALS].map(
+  (doc) => toCompletion(doc, 99)
 )
 const dateMemberCompletions = DATE_MEMBERS.map((doc) => toCompletion(doc, 80))
 const tableMemberCompletions = TABLE_MEMBERS.map((doc) => toCompletion(doc, 80))
@@ -89,26 +90,33 @@ function tableAliases(source: string, csvTitles: Set<string>): Set<string> {
   return aliases
 }
 
-function csvStringCompletions(
+function pageStringCompletions(
   context: CompletionContext,
-  titles: string[]
+  pages: Array<{ title: string; kind: 'CSV' | 'JSON' }>
 ): CompletionResult | null {
   const from = Math.max(0, context.pos - 80)
   const before = context.state.sliceDoc(from, context.pos)
   const csvCall = /\$csv\(\s*(['"])([^'"]*)$/.exec(before)
+  const jsonCall = /\$json\(\s*(['"])([^'"]*)$/.exec(before)
   const importFrom = /\bfrom\s+(['"])([^'"]*)$/.exec(before)
-  const match = csvCall ?? importFrom
+  const match = csvCall ?? jsonCall ?? importFrom
   if (!match) return null
   const quote = match[1]
   const typed = match[2]
+  const kind = csvCall ? 'CSV' : jsonCall ? 'JSON' : null
+  const options = pages.filter((page) => !kind || page.kind === kind)
   return {
     from: context.pos - typed.length,
-    options: titles.map((title) => ({
-      label: title,
+    options: options.map((page) => ({
+      label: page.title,
       type: 'text',
-      detail: 'CSV',
-      info: csvCall ? 'Load this CSV as a $Table.' : 'Import this page.',
-      apply: title + quote
+      detail: page.kind,
+      info: csvCall
+        ? 'Load this CSV as a $Table.'
+        : jsonCall
+          ? 'Load this JSON page.'
+          : 'Import this page.',
+      apply: page.title + quote
     })),
     validFor: /^[^'"]*$/
   }
@@ -119,8 +127,15 @@ function looksLikeCsvCall(context: CompletionContext): boolean {
   return /\$csv\s*\([^)]*\)\s*\.\s*[\w$]*$/.test(context.state.sliceDoc(from, context.pos))
 }
 
-export function createPaperAutocomplete(csvTitles: string[] = []): Extension[] {
+export function createPaperAutocomplete(
+  csvTitles: string[] = [],
+  jsonTitles: string[] = []
+): Extension[] {
   const titleSet = new Set(csvTitles)
+  const pages = [
+    ...csvTitles.map((title) => ({ title, kind: 'CSV' as const })),
+    ...jsonTitles.map((title) => ({ title, kind: 'JSON' as const }))
+  ]
 
   function paperCompletions(context: CompletionContext): CompletionResult | null {
     const path = completionPath(context)
@@ -171,7 +186,7 @@ export function createPaperAutocomplete(csvTitles: string[] = []): Extension[] {
       closeOnBlur: true
     }),
     javascriptLanguage.data.of({
-      autocomplete: (context: CompletionContext) => csvStringCompletions(context, csvTitles)
+      autocomplete: (context: CompletionContext) => pageStringCompletions(context, pages)
     }),
     javascriptLanguage.data.of({
       autocomplete: ifNotIn([...dontCompleteIn], paperCompletions)

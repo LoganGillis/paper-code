@@ -4,7 +4,9 @@ import {
   ChevronRight,
   Copy,
   CopyPlus,
+  ClipboardPaste,
   FileCode2,
+  FileJson,
   FileSpreadsheet,
   FileText,
   Folder,
@@ -32,6 +34,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -76,7 +79,8 @@ function PageRow({
     movePage,
     restorePage,
     purgePage,
-    showTrash
+    showTrash,
+    runningPageIds
   } = useWorkspace()
   const active = selected?.id === page.id
   const [dropEdge, setDropEdge] = useState<'before' | 'after' | null>(null)
@@ -136,18 +140,24 @@ function PageRow({
             }
           }}
           className={cn(
-            'group relative flex h-8 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
+            'group relative flex h-9 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
             active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70',
             dropEdge === 'before' && 'before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-foreground/50 before:content-[""]',
             dropEdge === 'after' && 'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground/50 after:content-[""]'
           )}
           style={{ paddingLeft: 10 + depth * 12 }}
         >
-          <IconPicker
-            icon={page.icon}
-            color={page.iconColor}
-            onChange={(appearance) => void updatePageAppearance(page.id, appearance)}
-          />
+          {runningPageIds.includes(page.id) ? (
+            <span className="inline-flex size-6 items-center justify-center">
+              <Spinner className="size-3.5" />
+            </span>
+          ) : (
+            <IconPicker
+              icon={page.icon}
+              color={page.iconColor}
+              onChange={(appearance) => void updatePageAppearance(page.id, appearance)}
+            />
+          )}
           <button
             type="button"
             className="flex min-w-0 flex-1 items-center text-left"
@@ -265,7 +275,7 @@ function FolderRow({
   const active = activeFolderId === folder.id
 
   return (
-    <div>
+    <div className={cn('flex flex-col', open && 'gap-1')}>
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
@@ -300,7 +310,7 @@ function FolderRow({
               }
             }}
             className={cn(
-              'group flex h-8 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
+              'group flex h-9 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
               active ? 'bg-accent/80' : 'hover:bg-accent/70'
             )}
             style={{ paddingLeft: 10 + depth * 12 }}
@@ -368,12 +378,14 @@ function FolderRow({
         )}
       >
         <div className="overflow-hidden">
-          {folder.folders.map((child) => (
-            <FolderRow key={child.id} folder={child} spaceId={spaceId} depth={depth + 1} />
-          ))}
-          {folder.pages.map((page) => (
-            <PageRow key={page.id} page={page} spaceId={spaceId} depth={depth + 1} />
-          ))}
+          <div className="flex flex-col gap-1">
+            {folder.folders.map((child) => (
+              <FolderRow key={child.id} folder={child} spaceId={spaceId} depth={depth + 1} />
+            ))}
+            {folder.pages.map((page) => (
+              <PageRow key={page.id} page={page} spaceId={spaceId} depth={depth + 1} />
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -387,7 +399,7 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
 
   if (showTrash) {
     return (
-      <div className="flex min-h-[8rem] flex-col pb-2">
+      <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
         {trashed.length === 0 ? (
           <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
             Nothing in the trash.
@@ -403,7 +415,7 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
 
   if (showArchived) {
     return (
-      <div className="flex min-h-[8rem] flex-col pb-2">
+      <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
         {archived.length === 0 ? (
           <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
             Nothing archived here.
@@ -419,7 +431,7 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
 
   const empty = tree.folders.length === 0 && tree.pages.length === 0
   return (
-    <div className="flex min-h-[8rem] flex-col pb-2">
+    <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
       {empty ? (
         <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
           Create a page to get started.
@@ -449,6 +461,7 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
     createPage,
     createFolder,
     importCsv,
+    pasteJsonFromClipboard,
     exportSpace,
     importSpace,
     movePage,
@@ -459,10 +472,10 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
   const open = openSpaceIds.includes(tree.space.id)
 
   return (
-    <section className="px-1.5">
+    <section className="flex flex-col gap-1 px-1.5">
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className="group flex h-9 items-center gap-1 rounded-lg px-1.5 transition-colors duration-150 hover:bg-accent/60">
+          <div className="group flex h-10 items-center gap-1 rounded-lg px-1.5 transition-colors duration-150 hover:bg-accent/60">
             <button
               type="button"
               className="flex size-5 items-center justify-center text-muted-foreground"
@@ -531,6 +544,16 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
                   <FileSpreadsheet className="size-3.5" />
                   New CSV
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => void createPage(tree.space.id, 'json', defaultPageTitle('json'))}
+                >
+                  <FileJson className="size-3.5" />
+                  New JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void pasteJsonFromClipboard(tree.space.id)}>
+                  <ClipboardPaste className="size-3.5" />
+                  JSON from clipboard
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void importCsv(tree.space.id)}>
                   <FileSpreadsheet className="size-3.5" />
                   Open CSV
@@ -581,6 +604,16 @@ export function SpaceSection({ tree }: { tree: SpaceTree }): React.JSX.Element {
           >
             <FileSpreadsheet className="size-3.5" />
             New CSV
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => void createPage(tree.space.id, 'json', defaultPageTitle('json'))}
+          >
+            <FileJson className="size-3.5" />
+            New JSON
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void pasteJsonFromClipboard(tree.space.id)}>
+            <ClipboardPaste className="size-3.5" />
+            JSON from clipboard
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void createFolder(tree.space.id, 'Untitled folder')}>
             <FolderPlus className="size-3.5" />

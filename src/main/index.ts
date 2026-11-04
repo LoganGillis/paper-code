@@ -1,11 +1,12 @@
-import { app, BrowserWindow, Menu, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
-import { join } from 'node:path'
+import { app, BrowserWindow, Menu, ipcMain, type MenuItemConstructorOptions } from 'electron'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getPrisma } from './db'
+import { registerOutputWindows } from './output-window'
 import { registerRpc } from './rpc'
 import { seedIfEmpty } from './seed'
 import { checkForUpdates, initUpdates } from './updates'
+import { createPaperWindow, loadRenderer } from './window'
 
 app.setName('Paper')
 
@@ -20,41 +21,12 @@ if (!gotLock) {
 }
 
 function createWindow(): BrowserWindow {
-  const isMac = process.platform === 'darwin'
-  const mainWindow = new BrowserWindow({
+  const mainWindow = createPaperWindow({
+    title: 'Paper',
     width: 1120,
     height: 760,
     minWidth: 880,
-    minHeight: 600,
-    show: false,
-    autoHideMenuBar: true,
-    title: 'Paper',
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: { x: 16, y: 16 },
-    ...(isMac
-      ? { acceptFirstMouse: true }
-      : {
-          titleBarOverlay: {
-            color: '#00000000',
-            symbolColor: '#6b6560',
-            height: 44
-          }
-        }),
-    backgroundColor: '#f7f5f1',
-    icon,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false
-    }
-  })
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-  })
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
+    minHeight: 600
   })
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -73,12 +45,7 @@ function createWindow(): BrowserWindow {
     })
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-
+  loadRenderer(mainWindow)
   return mainWindow
 }
 
@@ -179,6 +146,7 @@ app.whenReady().then(async () => {
   })
 
   registerRpc()
+  registerOutputWindows()
 
   try {
     const prisma = getPrisma()

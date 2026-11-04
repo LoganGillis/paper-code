@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { FileCode2, FileSpreadsheet, FileText, House, Pin, Plus, X } from 'lucide-react'
+import {
+  ClipboardPaste,
+  FileCode2,
+  FileJson,
+  FileSpreadsheet,
+  FileText,
+  House,
+  Pin,
+  Plus,
+  X
+} from 'lucide-react'
 import type { Page, PageSummary, SpaceTree } from '@shared/api'
 import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
@@ -32,6 +42,7 @@ export function TabBar(): React.JSX.Element {
     runningPageIds,
     createPage,
     importCsv,
+    pasteJsonFromClipboard,
     spaceId,
     spaces,
     openDesk,
@@ -290,6 +301,26 @@ export function TabBar(): React.JSX.Element {
           >
             <FileSpreadsheet className="size-3.5" />
             New CSV
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void createPage(host, 'json', defaultPageTitle('json'), undefined, { newTab: true })
+            }}
+          >
+            <FileJson className="size-3.5" />
+            New JSON
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              const host = spaceId ?? spaces[0]?.id
+              if (!host) return
+              void pasteJsonFromClipboard(host, { newTab: true })
+            }}
+          >
+            <ClipboardPaste className="size-3.5" />
+            JSON from clipboard
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {

@@ -4,8 +4,9 @@ import { transform } from 'sucrase'
 import { installCsvHelpers, resolvePage, tableFromPage } from '../shared/helpers/csv'
 import { installDateHelpers } from '../shared/helpers/dates'
 import { $Table } from '../shared/helpers/table'
+import { parseLooseJson } from '../shared/json-text'
+import { installSecretHelpers } from '../shared/helpers/secret-bag'
 import type { Page, RunLog, RunResult } from '../shared/api'
-import { installSecretHelpers } from './secrets'
 
 const RUN_TIMEOUT_MS = 8_000
 
@@ -15,10 +16,7 @@ function isTable(value: unknown): value is $Table {
 
 function tableGrid(table: $Table): string[][] {
   const columns = table.columns
-  return [
-    columns,
-    ...table.rows.map((row) => columns.map((column) => String(row[column] ?? '')))
-  ]
+  return [columns, ...table.rows.map((row) => columns.map((column) => String(row[column] ?? '')))]
 }
 
 function formatArg(value: unknown): string {
@@ -66,6 +64,28 @@ function compile(source: string, language: 'javascript' | 'typescript'): string 
   }).code
 }
 
+function jsonFromPage(page: Page): unknown {
+  if (page.type !== 'json') throw new Error(`"${page.title}" is not JSON`)
+  try {
+    return parseLooseJson(page.content)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`"${page.title}" is not valid JSON (${message})`)
+  }
+}
+
+function installJsonHelpers(
+  target: Record<string, unknown>,
+  context: { page: Page; pages: Page[]; spaces: Array<{ id: string; name: string }> }
+): void {
+  const load = (spec: string): unknown => {
+    const found = resolvePage(spec, context.page, context.pages, context.spaces)
+    if (!found) throw new Error(`Cannot find JSON "${spec}"`)
+    return jsonFromPage(found)
+  }
+  Object.defineProperty(target, '$json', { configurable: true, enumerable: true, value: load })
+}
+
 function evaluateModule(
   page: Page,
   pages: Page[],
@@ -76,6 +96,9 @@ function evaluateModule(
 ): unknown {
   if (page.type === 'csv') {
     return tableFromPage(page)
+  }
+  if (page.type === 'json') {
+    return jsonFromPage(page)
   }
   if (page.type !== 'javascript' && page.type !== 'typescript') {
     throw new Error(`Cannot import "${page.title}" (${page.type})`)
@@ -105,6 +128,7 @@ function evaluateModule(
   }
   installDateHelpers(sandbox)
   installCsvHelpers(sandbox, { page, pages, spaces })
+  installJsonHelpers(sandbox, { page, pages, spaces })
   installSecretHelpers(sandbox, secrets)
   sandbox.exports = module.exports
   vm.runInNewContext(compiled, sandbox, { timeout: RUN_TIMEOUT_MS, displayErrors: true })
@@ -154,6 +178,7 @@ export async function executeSnippet(
     }
     installDateHelpers(sandbox)
     installCsvHelpers(sandbox, { page: current, pages: context.pages, spaces })
+    installJsonHelpers(sandbox, { page: current, pages: context.pages, spaces })
     installSecretHelpers(sandbox, context.secrets ?? {})
     sandbox.exports = module.exports
 
@@ -184,7 +209,12 @@ export async function executeSnippet(
       ])
       if (settled === undefined) return { logs }
       if (isTable(settled)) {
-        return { logs, result: formatArg(settled), resultKind: 'table', resultTable: tableGrid(settled) }
+        return {
+          logs,
+          result: formatArg(settled),
+          resultKind: 'table',
+          resultTable: tableGrid(settled)
+        }
       }
       if (settled && typeof settled === 'object') {
         return { logs, result: formatArg(settled), resultKind: 'object', resultObject: settled }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { IconColorId, IconName } from '@shared/icons'
-import { ICON_ACCENT, ICON_COLOR_IDS, ICON_NAMES } from '@shared/icons'
+import { ICON_COLOR_IDS, ICON_NAMES } from '@shared/icons'
 import { NamedIcon } from '@/lib/lucide-icons'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -36,10 +36,9 @@ export function IconBadge({
       className={cn(
         'inline-flex size-6 shrink-0 items-center justify-center',
         variant === 'chip' && `rounded-md icon-chip icon-chip-${color}`,
-        variant === 'plain' && 'bg-transparent',
+        variant === 'plain' && `bg-transparent icon-plain-${color}`,
         className
       )}
-      style={variant === 'plain' ? { color: ICON_ACCENT[color] } : undefined}
     >
       <NamedIcon name={icon} className={variant === 'plain' ? 'size-[70%]' : 'size-[72%]'} />
     </span>

@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
+import { PanelBottom, Play, SquareArrowOutUpRight } from 'lucide-react'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { ReactNodeViewProps } from '@tiptap/react'
-import { Play } from 'lucide-react'
+
 import type { RunResult } from '@shared/api'
 import { displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
@@ -17,6 +18,7 @@ import { getRunContext } from '@/lib/run-context'
 import { RUN_ACCENT } from '@/lib/run-accent'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
+import { usePopoutOutput } from '@/lib/output-popout'
 
 export const ScriptRun = Node.create({
   name: 'scriptRun',
@@ -65,6 +67,17 @@ function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): 
   const accent = pagesById[host.pageId]?.iconColor ?? script?.page.iconColor ?? 'slate'
   const running = Boolean(pageId && runningPageIds.includes(pageId))
 
+  const output = usePopoutOutput(
+    {
+      key: `script-run:${host.pageId}:${pageId || 'none'}`,
+      title: script ? displayTitle(script.page.title) : 'Script',
+      accent,
+      run,
+      running
+    },
+    () => setRun(null)
+  )
+
   const onRun = useCallback(async () => {
     if (!script) return
     const full = pagesById[script.page.id] ?? (await api.pages.get({ id: script.page.id }))
@@ -99,6 +112,16 @@ function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): 
             <TypeBadge type={script.page.type} />
             <Button
               type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground [&_svg]:size-3.5"
+              aria-label={output.popped ? 'Show output window' : 'Pop out output'}
+              onClick={() => (output.popped ? output.show() : output.pop())}
+            >
+              <SquareArrowOutUpRight />
+            </Button>
+            <Button
+              type="button"
               size="sm"
               className={cn('h-7 shadow-none', RUN_ACCENT[accent])}
               disabled={running}
@@ -131,7 +154,36 @@ function ScriptRunView({ node, updateAttributes, editor }: ReactNodeViewProps): 
           />
         </div>
       ) : null}
-      {run ? (
+      {output.popped ? (
+        <div
+          className="flex items-center justify-between gap-3 border-t border-border/60 bg-sidebar/50 px-3 py-2"
+          contentEditable={false}
+        >
+          <p className="text-[12px] text-muted-foreground">Output is in its own window.</p>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground [&_svg]:size-3.5"
+              aria-label="Show output window"
+              onClick={output.show}
+            >
+              <SquareArrowOutUpRight />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground [&_svg]:size-3.5"
+              aria-label="Dock output"
+              onClick={output.dock}
+            >
+              <PanelBottom />
+            </Button>
+          </div>
+        </div>
+      ) : run ? (
         <div className="border-t border-border/60 bg-sidebar/50" contentEditable={false}>
           <RunOutput run={run} />
         </div>

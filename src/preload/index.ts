@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { RPC_CHANNEL, type RpcRequest, type RpcResult, type UpdateStatus } from '../shared/api'
+import {
+  RPC_CHANNEL,
+  type OutputSnapshot,
+  type RpcRequest,
+  type RpcResult,
+  type UpdateStatus
+} from '../shared/api'
 
 const api = {
   invoke: (path: string, input?: unknown): Promise<RpcResult> => {
@@ -35,6 +41,35 @@ const api = {
     return () => {
       ipcRenderer.removeListener('paper:spell-context', listener)
     }
+  },
+  openOutput: (snapshot: OutputSnapshot): Promise<void> =>
+    ipcRenderer.invoke('paper:output-open', snapshot),
+  updateOutput: (snapshot: OutputSnapshot): void => {
+    ipcRenderer.send('paper:output-update', snapshot)
+  },
+  dockOutput: (key: string): Promise<void> => ipcRenderer.invoke('paper:output-dock', key),
+  outputIsOpen: (key: string): Promise<boolean> => ipcRenderer.invoke('paper:output-is-open', key),
+  outputHello: (): Promise<OutputSnapshot | null> => ipcRenderer.invoke('paper:output-hello'),
+  clearOutput: (): void => {
+    ipcRenderer.send('paper:output-clear')
+  },
+  closeWindow: (): void => {
+    ipcRenderer.send('paper:close-window')
+  },
+  onOutputState: (callback: (snapshot: OutputSnapshot) => void): (() => void) => {
+    const listener = (_event: unknown, snapshot: OutputSnapshot): void => callback(snapshot)
+    ipcRenderer.on('paper:output-state', listener)
+    return () => ipcRenderer.removeListener('paper:output-state', listener)
+  },
+  onOutputClosed: (callback: (key: string) => void): (() => void) => {
+    const listener = (_event: unknown, key: string): void => callback(key)
+    ipcRenderer.on('paper:output-closed', listener)
+    return () => ipcRenderer.removeListener('paper:output-closed', listener)
+  },
+  onOutputCleared: (callback: (key: string) => void): (() => void) => {
+    const listener = (_event: unknown, key: string): void => callback(key)
+    ipcRenderer.on('paper:output-cleared', listener)
+    return () => ipcRenderer.removeListener('paper:output-cleared', listener)
   }
 }
 

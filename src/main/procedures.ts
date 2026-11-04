@@ -6,7 +6,7 @@ import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, getPrisma } from './db'
 import { didSeedThisLaunch } from './seed'
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updates'
-import { executeSnippet } from './runner'
+import { executeSnippetAsync } from './run-pool'
 import { exportBackup, exportSpace, importBackup, importSpace } from './transfer'
 import { isSecretEncryptionAvailable, sealSecret, unsealSecret } from './secrets'
 import {
@@ -29,9 +29,10 @@ import type {
   SpaceTree
 } from '../shared/api'
 import { buildGuideDataPages, isGuideDataPageId, isGuidePageId } from '../shared/guide-data'
+import { PAGE_TYPE_IDS } from '../shared/page-types'
 
 const idInput = z.object({ id: z.string().min(1) })
-const pageTypes = ['markdown', 'javascript', 'typescript', 'csv'] as const
+const pageTypes = PAGE_TYPE_IDS
 const iconName = z.enum(ICON_NAMES)
 const iconColor = z.enum(ICON_COLOR_IDS)
 
@@ -663,7 +664,9 @@ export const procedures: AppApi = {
             ? 'const value: string = "Hello, Paper"\nconsole.log(value)\n'
             : data.type === 'csv'
               ? 'column,value\n,'
-              : 'console.log("Hello, Paper")\n')
+              : data.type === 'json'
+                ? '{\n  "hello": "Paper"\n}\n'
+                : 'console.log("Hello, Paper")\n')
 
       const parent = data.folderId
         ? await getPrisma().folder.findUnique({ where: { id: data.folderId } })
@@ -866,7 +869,7 @@ export const procedures: AppApi = {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }
-      const outcome = await executeSnippet(data.language, data.source, {
+      const outcome = await executeSnippetAsync(data.language, data.source, {
         page: current,
         pages: pagesForRun,
         spaces: spaces.map((space) => ({ id: space.id, name: space.name })),

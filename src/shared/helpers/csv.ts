@@ -6,7 +6,7 @@ function normalizeSpec(spec: string): string {
     .trim()
     .replace(/^\.\//, '')
     .replace(/^\//, '')
-    .replace(/\.(js|jsx|ts|tsx|mjs|cjs|csv)$/i, '')
+    .replace(/\.(js|jsx|ts|tsx|mjs|cjs|csv|json)$/i, '')
 }
 
 export function splitImportSpec(spec: string): { spaceName: string | null; title: string } {

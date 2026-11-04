@@ -1,3 +1,6 @@
+import type { PageType } from './api'
+import { PAGE_TYPES } from './page-types'
+
 export const ICON_COLOR_IDS = [
   'slate',
   'rose',
@@ -167,22 +170,12 @@ export function isIconColorId(value: string): value is IconColorId {
   return (ICON_COLOR_IDS as readonly string[]).includes(value)
 }
 
-export function defaultIconForPage(
-  type: 'markdown' | 'javascript' | 'typescript' | 'csv'
-): IconName {
-  if (type === 'javascript') return 'FileCode'
-  if (type === 'typescript') return 'FileCode2'
-  if (type === 'csv') return 'Table2'
-  return 'FileText'
+export function defaultIconForPage(type: PageType): IconName {
+  return PAGE_TYPES[type].icon
 }
 
-export function defaultColorForPage(
-  type: 'markdown' | 'javascript' | 'typescript' | 'csv'
-): IconColorId {
-  if (type === 'javascript') return 'peach'
-  if (type === 'typescript') return 'sky'
-  if (type === 'csv') return 'sage'
-  return 'slate'
+export function defaultColorForPage(type: PageType): IconColorId {
+  return PAGE_TYPES[type].color
 }
 
 export function normalizeIcon(value: string, fallback: IconName = 'FileText'): IconName {

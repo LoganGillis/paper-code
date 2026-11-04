@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { transform } from 'sucrase'
 import CodeMirror from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
 import { EditorView, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
+import { definitionAt, importSpecAt, renameAt } from '@shared/js-refs'
+import { formatJsonText } from '@shared/json-text'
 import { createPaperAutocomplete } from '@/lib/paper-completions'
 import { useWorkspace } from '@/lib/workspace'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -128,7 +131,7 @@ export function CodeEditor({
   readOnly = false
 }: {
   value: string
-  language: 'javascript' | 'typescript'
+  language: 'javascript' | 'typescript' | 'json'
   onChange: (value: string) => void
   active?: boolean
   accent?: IconColorId
@@ -139,23 +142,42 @@ export function CodeEditor({
 }): React.JSX.Element {
   const { theme } = useTheme()
   const dark = theme === 'dark'
-  const { trees } = useWorkspace()
-  const csvTitles = useMemo(() => {
-    const titles: string[] = []
+  const { trees, selectPage } = useWorkspace()
+  const pageTitles = useMemo(() => {
+    const csv: string[] = []
+    const jsonTitles: string[] = []
     const walk = (folders: import('@shared/api').FolderNode[]): void => {
       for (const folder of folders) {
-        for (const item of folder.pages) if (item.type === 'csv') titles.push(item.title)
+        for (const item of folder.pages) {
+          if (item.type === 'csv') csv.push(item.title)
+          if (item.type === 'json') jsonTitles.push(item.title)
+        }
         walk(folder.folders)
       }
     }
     for (const tree of Object.values(trees)) {
-      for (const item of tree.pages) if (item.type === 'csv') titles.push(item.title)
+      for (const item of tree.pages) {
+        if (item.type === 'csv') csv.push(item.title)
+        if (item.type === 'json') jsonTitles.push(item.title)
+      }
       walk(tree.folders)
     }
-    return [...new Set(titles)].sort((a, b) => a.localeCompare(b))
+    return {
+      csv: [...new Set(csv)].sort((a, b) => a.localeCompare(b)),
+      json: [...new Set(jsonTitles)].sort((a, b) => a.localeCompare(b))
+    }
   }, [trees])
   const [view, setView] = useState<EditorView | null>(null)
   const syntaxError = useMemo(() => {
+    if (language === 'json') {
+      if (!value.trim()) return null
+      try {
+        JSON.parse(value)
+        return null
+      } catch (cause) {
+        return cause instanceof Error ? cause.message : 'Invalid JSON'
+      }
+    }
     try {
       transform(value, {
         transforms: language === 'typescript' ? ['typescript', 'imports'] : ['imports']
@@ -165,10 +187,19 @@ export function CodeEditor({
       return cause instanceof Error ? cause.message : 'Syntax error'
     }
   }, [language, value])
+  const [menu, setMenu] = useState<{ x: number; y: number; pos: number } | null>(null)
+  const [rename, setRename] = useState<{ pos: number; value: string } | null>(null)
   const [findOpen, setFindOpen] = useState(false)
   const [replaceMode, setReplaceMode] = useState(false)
   const [query, setQuery] = useState('')
   const [replace, setReplace] = useState('')
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [menu])
+
   useEffect(() => {
     if (!view || !onRun) return
     runHandlers.set(view, onRun)
@@ -177,10 +208,55 @@ export function CodeEditor({
     }
   }, [onRun, view])
 
+  const navRef = useRef<(view: EditorView, pos: number) => void>(() => undefined)
+  useEffect(() => {
+    navRef.current = (editor, pos) => {
+      const source = editor.state.doc.toString()
+      const spec = language === 'json' ? null : importSpecAt(source, pos)
+      if (spec) {
+        const stem = spec.replace(/\.(json|csv|js|ts)$/i, '')
+        for (const [spaceId, tree] of Object.entries(trees)) {
+          const stack = [
+            ...tree.pages,
+            ...tree.folders.flatMap(function walk(
+              folder: (typeof tree.folders)[number]
+            ): typeof tree.pages {
+              return [...folder.pages, ...folder.folders.flatMap(walk)]
+            })
+          ]
+          const hit = stack.find((item) => item.title === spec || item.title === stem)
+          if (hit) {
+            void selectPage(hit.id, spaceId)
+            return
+          }
+        }
+      }
+      const target = definitionAt(source, pos)
+      if (!target) return
+      editor.dispatch({
+        selection: { anchor: target.from, head: target.to },
+        scrollIntoView: true
+      })
+      editor.focus()
+    }
+  }, [language, selectPage, trees])
+
   const extensions = useMemo(
     () => [
-      javascript({ typescript: language === 'typescript', jsx: false }),
-      ...createPaperAutocomplete(csvTitles),
+      language === 'json'
+        ? json()
+        : javascript({ typescript: language === 'typescript', jsx: false }),
+      ...(language === 'json' ? [] : createPaperAutocomplete(pageTitles.csv, pageTitles.json)),
+      EditorView.domEventHandlers({
+        mousedown(event, editor) {
+          if (event.button !== 0 || !(event.metaKey || event.ctrlKey)) return false
+          const pos = editor.posAtCoords({ x: event.clientX, y: event.clientY })
+          if (pos == null) return false
+          event.preventDefault()
+          navRef.current(editor, pos)
+          return true
+        }
+      }),
       runKeymap,
       search({
         top: true,
@@ -192,7 +268,7 @@ export function CodeEditor({
       paperTheme(dark, ICON_ACCENT[accent]),
       syntaxHighlighting(paperHighlight(dark, ICON_ACCENT[accent]))
     ],
-    [accent, csvTitles, dark, language]
+    [accent, dark, language, pageTitles.csv, pageTitles.json]
   )
 
   useEffect(() => {
@@ -230,7 +306,16 @@ export function CodeEditor({
   }, [active, compact, onRun, view])
 
   return (
-    <div className={cn('relative min-h-0', compact ? 'min-h-[8.5rem]' : 'h-full')}>
+    <div
+      className={cn('relative min-h-0', compact ? 'min-h-[8.5rem]' : 'h-full')}
+      onContextMenu={(event) => {
+        if (!view || readOnly) return
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+        if (pos == null) return
+        event.preventDefault()
+        setMenu({ x: event.clientX, y: event.clientY, pos })
+      }}
+    >
       {compact ? null : (
         <FindBar
           view={view}
@@ -249,13 +334,85 @@ export function CodeEditor({
           {syntaxError}
         </p>
       ) : null}
+      {menu ? (
+        <div
+          className="paper-float fixed z-50 min-w-40 p-1"
+          style={{ left: menu.x, top: menu.y }}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <button
+            type="button"
+            className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            onClick={() => {
+              const source = view?.state.doc.toString() ?? value
+              let from = menu.pos
+              let to = menu.pos
+              while (from > 0 && /[\w$]/.test(source[from - 1] ?? '')) from -= 1
+              while (to < source.length && /[\w$]/.test(source[to] ?? '')) to += 1
+              setRename({ pos: menu.pos, value: source.slice(from, to) })
+              setMenu(null)
+            }}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            onClick={() => {
+              if (view) navRef.current(view, menu.pos)
+              setMenu(null)
+            }}
+          >
+            Go to definition
+          </button>
+          {language === 'json' ? (
+            <button
+              type="button"
+              className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+              onClick={() => {
+                try {
+                  onChange(formatJsonText(value))
+                } catch {
+                  setMenu(null)
+                  return
+                }
+                setMenu(null)
+              }}
+            >
+              Format
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {rename ? (
+        <form
+          className="paper-float absolute top-2 left-2 z-20 flex items-center gap-2 p-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const next = renameAt(value, rename.pos, rename.value.trim())
+            if (next != null) onChange(next)
+            setRename(null)
+          }}
+        >
+          <input
+            autoFocus
+            value={rename.value}
+            aria-label="New name"
+            className="w-40 bg-transparent font-mono text-[13px] outline-none"
+            onChange={(event) => setRename({ ...rename, value: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setRename(null)
+            }}
+          />
+        </form>
+      ) : null}
       <CodeMirror
         value={value}
         height={compact ? 'auto' : '100%'}
         className={compact ? 'min-h-[8.5rem]' : 'h-full min-h-0'}
         editable={!readOnly}
         basicSetup={{
-          foldGutter: false,
+          foldGutter: true,
           highlightActiveLineGutter: false,
           lineNumbers: true,
           searchKeymap: false

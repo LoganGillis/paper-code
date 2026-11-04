@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChartColumn, Play, Plus, Table2, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  Braces,
+  ChartColumn,
+  ClipboardPaste,
+  Eraser,
+  PanelBottom,
+  Play,
+  Plus,
+  SquareArrowOutUpRight,
+  Table2,
+  X
+} from 'lucide-react'
+import { formatJsonText } from '@shared/json-text'
 import { ICON_ACCENT } from '@shared/icons'
+import { PAGE_TYPES } from '@shared/page-types'
 import type { Page, RunResult } from '@shared/api'
 import { api } from '@/lib/rpc'
 import { useWorkspace } from '@/lib/workspace'
@@ -19,13 +33,18 @@ import { loadChartSpec, saveChartSpec, type ChartSpec } from '@/lib/chart-data'
 import { RUN_ACCENT } from '@/lib/run-accent'
 import { cn } from '@/lib/utils'
 import { modSymbol } from '@/lib/platform'
+import { EditorBar, EditorBarButton, Segmented } from '@/components/editor-bar'
 import { PageActions } from '@/components/page-actions'
 import { RunOutput } from '@/components/run-output'
+import { Spinner } from '@/components/ui/spinner'
 import { useSavedFlash } from '@/components/saved-flash'
+import { usePopoutOutput } from '@/lib/output-popout'
 
 function descriptionHasText(content: string): boolean {
   try {
-    const parsed = JSON.parse(content) as { content?: Array<{ content?: Array<{ text?: string }> }> }
+    const parsed = JSON.parse(content) as {
+      content?: Array<{ content?: Array<{ text?: string }> }>
+    }
     const text = (parsed.content ?? [])
       .flatMap((node) => node.content ?? [])
       .map((node) => node.text ?? '')
@@ -149,6 +168,8 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
   const locked = isGuidePageId(page.id) || page.locked
   const isCode = page.type === 'javascript' || page.type === 'typescript'
   const isCsv = page.type === 'csv'
+  const isJson = page.type === 'json'
+  const toolPage = PAGE_TYPES[page.type].kind !== 'markdown'
   const [csvView, setCsvView] = useState<'table' | 'chart'>(() =>
     window.localStorage.getItem(`paper.csvView.${page.id}`) === 'chart' ? 'chart' : 'table'
   )
@@ -175,6 +196,17 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     return () => window.removeEventListener('keydown', onKey)
   }, [active, blockRef, flash, flushSave, page.id])
 
+  const output = usePopoutOutput(
+    {
+      key: page.id,
+      title,
+      accent: page.iconColor,
+      run,
+      running
+    },
+    () => setRun(null)
+  )
+
   const onRun = useCallback(async () => {
     if (page.type !== 'javascript' && page.type !== 'typescript') return
     setPageRunning(page.id, true)
@@ -200,7 +232,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
       <header
         className={cn(
           'group shrink-0',
-          isCode || isCsv ? 'px-6 pt-6 pb-3' : 'mx-auto w-full max-w-3xl px-10 pt-10 pb-4'
+          toolPage ? 'px-6 pt-6 pb-3' : 'mx-auto w-full max-w-3xl px-10 pt-10 pb-4'
         )}
       >
         <div className="mb-3 flex items-center gap-3">
@@ -243,15 +275,50 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                 const next = title.trim()
                 if (next && next !== page.title) void renamePage(page.id, next)
               }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                event.currentTarget.blur()
+              }}
             />
           )}
           {blockRef || isGuidePageId(page.id) ? null : <PageActions page={page} />}
         </div>
-        {(isCode || isCsv) && !blockRef ? (
-          <DescriptionField
-            content={page.description}
-            onChange={(description) => saveDescription(description)}
-          />
+        {toolPage && !blockRef ? (
+          <div className="mt-1 flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <DescriptionField
+                content={page.description}
+                onChange={(description) => saveDescription(description)}
+              />
+            </div>
+            {isCode ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <Segmented
+                  value={page.type}
+                  options={[
+                    { id: 'javascript', label: 'JavaScript' },
+                    { id: 'typescript', label: 'TypeScript' }
+                  ]}
+                  onChange={(id) => void changePageType(page.id, id)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className={cn('shadow-none', RUN_ACCENT[page.iconColor])}
+                  onClick={() => void onRun()}
+                  disabled={running}
+                >
+                  {running ? <Spinner className="size-3.5" /> : <Play />}
+                  {running ? 'Running' : 'Run'}
+                  <KbdGroup className="ml-1 opacity-80">
+                    <Kbd className="bg-current/15 text-current">{modSymbol()}</Kbd>
+                    <Kbd className="bg-current/15 text-current">↵</Kbd>
+                  </KbdGroup>
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
@@ -273,37 +340,19 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
 
       {isCsv ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t border-border/50">
-          <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
-            <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
-              csv
-            </p>
-            <div className="flex rounded-md bg-sidebar p-0.5">
-              {(
-                [
-                  { id: 'table' as const, label: 'Table', icon: Table2 },
-                  { id: 'chart' as const, label: 'Chart', icon: ChartColumn }
-                ] as const
-              ).map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className={cn(
-                    'h-6 gap-1 px-2 text-[11px]',
-                    csvView === item.id && 'bg-paper text-foreground shadow-sm'
-                  )}
-                  onClick={() => {
-                    setCsvView(item.id)
-                    window.localStorage.setItem(`paper.csvView.${page.id}`, item.id)
-                  }}
-                >
-                  <item.icon className="size-3.5" />
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-          </div>
+          <EditorBar type="csv">
+            <Segmented
+              value={csvView}
+              options={[
+                { id: 'table', label: 'Table', icon: Table2 },
+                { id: 'chart', label: 'Chart', icon: ChartColumn }
+              ]}
+              onChange={(id) => {
+                setCsvView(id)
+                window.localStorage.setItem(`paper.csvView.${page.id}`, id)
+              }}
+            />
+          </EditorBar>
           {csvView === 'table' ? (
             <CsvEditor
               active={active}
@@ -328,50 +377,99 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
         </div>
       ) : null}
 
+      {isJson ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t border-border/50">
+          <EditorBar type="json">
+            <EditorBarButton
+              className="text-muted-foreground"
+              disabled={page.locked}
+              aria-label="Paste JSON from clipboard"
+              onClick={() => {
+                void navigator.clipboard.readText().then((text) => {
+                  try {
+                    const next = formatJsonText(text)
+                    setSource(next)
+                    saveContent(next)
+                  } catch {
+                    // Leave the page alone when the clipboard is not JSON.
+                  }
+                })
+              }}
+            >
+              <ClipboardPaste className="size-3.5" />
+              Paste
+            </EditorBarButton>
+            <EditorBarButton
+              className="text-muted-foreground"
+              disabled={page.locked}
+              aria-label="Format JSON"
+              onClick={() => {
+                try {
+                  const next = formatJsonText(source)
+                  setSource(next)
+                  saveContent(next)
+                } catch {
+                  // Leave the page alone when the text is not JSON.
+                }
+              }}
+            >
+              <Braces className="size-3.5" />
+              Format
+            </EditorBarButton>
+          </EditorBar>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <CodeEditor
+              active={active}
+              accent={page.iconColor}
+              restoreFocus={active && preserveEditorFocus}
+              value={source}
+              readOnly={page.locked}
+              language="json"
+              onChange={(content) => {
+                setSource(content)
+                saveContent(content)
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {isCode ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center justify-between border-t border-border/60 px-4 py-2">
-            <div className="flex rounded-sm bg-sidebar p-0.5">
-              {(['javascript', 'typescript'] as const).map((id) => (
-                <Button
-                  key={id}
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className={cn(
-                    'h-6 rounded-sm px-2 text-[11px]',
-                    page.type === id && 'bg-paper text-foreground shadow-sm'
-                  )}
-                  disabled={Boolean(blockRef && isGuidePageId(blockRef.pageId))}
-                  onClick={() => {
-                    if (page.type === id) return
-                    if (blockRef) {
-                      void saveBlockContent(blockRef.pageId, blockRef.blockId, { language: id })
-                      return
-                    }
-                    void changePageType(page.id, id)
-                  }}
-                >
-                  {id === 'javascript' ? 'JavaScript' : 'TypeScript'}
-                </Button>
-              ))}
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              className={cn('shadow-none', RUN_ACCENT[page.iconColor])}
-              onClick={() => void onRun()}
-              disabled={running}
+          {blockRef ? (
+            <EditorBar
+              type={page.type === 'typescript' ? 'typescript' : 'javascript'}
+              className="border-t"
             >
-              <Play />
-              {running ? 'Running' : 'Run'}
-              <KbdGroup className="ml-1 opacity-80">
-                <Kbd className="bg-current/15 text-current">{modSymbol()}</Kbd>
-                <Kbd className="bg-current/15 text-current">↵</Kbd>
-              </KbdGroup>
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden border-t border-border/60">
+              <Segmented
+                value={page.type === 'typescript' ? 'typescript' : 'javascript'}
+                options={[
+                  { id: 'javascript', label: 'JavaScript' },
+                  { id: 'typescript', label: 'TypeScript' }
+                ]}
+                disabled={isGuidePageId(blockRef.pageId)}
+                onChange={(id) =>
+                  void saveBlockContent(blockRef.pageId, blockRef.blockId, { language: id })
+                }
+              />
+              <Button
+                type="button"
+                size="sm"
+                className={cn('shadow-none', RUN_ACCENT[page.iconColor])}
+                onClick={() => void onRun()}
+                disabled={running}
+              >
+                {running ? <Spinner className="size-3.5" /> : <Play />}
+                {running ? 'Running' : 'Run'}
+              </Button>
+            </EditorBar>
+          ) : null}
+          <div
+            className={cn(
+              'min-h-0 flex-1 overflow-hidden',
+              blockRef ? null : 'border-t border-border/60'
+            )}
+          >
             <CodeEditor
               active={active}
               accent={page.iconColor}
@@ -386,51 +484,94 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               }}
             />
           </div>
-          <div
-            className="console-resizer shrink-0"
-            onMouseDown={(event) => {
-              event.preventDefault()
-              const startY = event.clientY
-              const startH = consoleHeight
-              const onMove = (move: MouseEvent): void => {
-                const next = Math.min(420, Math.max(88, startH + (startY - move.clientY)))
-                setConsoleHeight(next)
-                window.localStorage.setItem('paper.consoleHeight', String(next))
-              }
-              const onUp = (): void => {
-                window.removeEventListener('mousemove', onMove)
-                window.removeEventListener('mouseup', onUp)
-              }
-              window.addEventListener('mousemove', onMove)
-              window.addEventListener('mouseup', onUp)
-            }}
-          />
-          <section
-            className="shrink-0 overflow-auto bg-sidebar/50 px-4 py-2 shadow-[inset_0_10px_12px_-12px_rgb(0_0_0/0.28)] select-text"
-            style={{ height: consoleHeight }}
-          >
-            <div className="mb-1 flex items-center justify-between">
-              <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
-                Output
-              </p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-[11px]"
-                onClick={() => setRun(null)}
+          {output.popped ? (
+            <section className="flex h-10 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-sidebar/50 px-4">
+              <p className="text-[12px] text-muted-foreground">Output is in its own window.</p>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-6 text-muted-foreground [&_svg]:size-3.5"
+                  aria-label="Show output window"
+                  onClick={output.show}
+                >
+                  <SquareArrowOutUpRight />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-6 text-muted-foreground [&_svg]:size-3.5"
+                  aria-label="Dock output"
+                  onClick={output.dock}
+                >
+                  <PanelBottom />
+                </Button>
+              </div>
+            </section>
+          ) : (
+            <>
+              <div
+                className="console-resizer shrink-0"
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  const startY = event.clientY
+                  const startH = consoleHeight
+                  const onMove = (move: MouseEvent): void => {
+                    const next = Math.min(420, Math.max(88, startH + (startY - move.clientY)))
+                    setConsoleHeight(next)
+                    window.localStorage.setItem('paper.consoleHeight', String(next))
+                  }
+                  const onUp = (): void => {
+                    window.removeEventListener('mousemove', onMove)
+                    window.removeEventListener('mouseup', onUp)
+                  }
+                  window.addEventListener('mousemove', onMove)
+                  window.addEventListener('mouseup', onUp)
+                }}
+              />
+              <section
+                className="shrink-0 overflow-auto bg-sidebar/50 px-4 py-2 shadow-[inset_0_10px_12px_-12px_rgb(0_0_0/0.28)] select-text"
+                style={{ height: consoleHeight }}
               >
-                Clear
-              </Button>
-            </div>
-            {!run ? (
-              <p className="font-mono text-sm text-muted-foreground">
-                Run the snippet to see logs here.
-              </p>
-            ) : (
-              <RunOutput run={run} />
-            )}
-          </section>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
+                    Output
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 text-muted-foreground [&_svg]:size-3.5"
+                      aria-label="Pop out output"
+                      onClick={output.pop}
+                    >
+                      <SquareArrowOutUpRight />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 text-muted-foreground [&_svg]:size-3.5"
+                      aria-label="Clear output"
+                      onClick={() => setRun(null)}
+                    >
+                      <Eraser />
+                    </Button>
+                  </div>
+                </div>
+                {!run ? (
+                  <p className="font-mono text-sm text-muted-foreground">
+                    Run the snippet to see logs here.
+                  </p>
+                ) : (
+                  <RunOutput run={run} />
+                )}
+              </section>
+            </>
+          )}
         </div>
       ) : null}
     </article>

@@ -2,7 +2,7 @@ import type { IconColorId, IconName } from './icons'
 
 export const RPC_CHANNEL = 'desktop:rpc'
 
-export type PageType = 'markdown' | 'javascript' | 'typescript' | 'csv'
+export type PageType = 'markdown' | 'javascript' | 'typescript' | 'csv' | 'json'
 
 export type Appearance = {
   icon: IconName
@@ -107,6 +107,14 @@ export type RunResult = {
   resultTable?: string[][]
   resultObject?: unknown
   error?: string
+}
+
+export type OutputSnapshot = {
+  key: string
+  title: string
+  accent: IconColorId
+  run: RunResult | null
+  running: boolean
 }
 
 export type SecretSummary = {

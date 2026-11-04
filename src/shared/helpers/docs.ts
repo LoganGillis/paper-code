@@ -582,6 +582,18 @@ export const SECRET_GLOBALS: HelperDoc[] = [
   }
 ]
 
+export const JSON_ROOTS = ['$json'] as const
+
+export const JSON_GLOBALS: HelperDoc[] = [
+  {
+    label: '$json',
+    kind: 'function',
+    detail: '(name) → unknown',
+    info: 'Load a JSON page. Same value as importing that page. Prefers a file in the same folder.',
+    snippet: '$json("${name}")'
+  }
+]
+
 export const TABLE_ROOTS = ['$csv', '$Table'] as const
 
 export const CSV_GLOBALS: HelperDoc[] = [

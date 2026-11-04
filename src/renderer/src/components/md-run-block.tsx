@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { ReactNodeViewProps } from '@tiptap/react'
-import { Maximize2, Play } from 'lucide-react'
+import { Maximize2, PanelBottom, Play, SquareArrowOutUpRight } from 'lucide-react'
 import type { RunResult } from '@shared/api'
 import { CodeEditor } from '@/components/code-editor'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 import { RunOutput } from '@/components/run-output'
 import { wantsNewTab } from '@/lib/platform'
+import { usePopoutOutput } from '@/lib/output-popout'
 
 export const RunnableCode = Node.create({
   name: 'runnableCode',
@@ -101,6 +102,18 @@ function RunnableCodeView({
     [canEdit, editor, getPos, node.nodeSize, node.textContent]
   )
 
+  const [blockId] = useState(() => String(node.attrs.blockId || '') || newBlockId())
+  const output = usePopoutOutput(
+    {
+      key: `run-block:${pageId}:${blockId}`,
+      title: 'Run block',
+      accent,
+      run,
+      running
+    },
+    () => setRun(null)
+  )
+
   const onRun = useCallback(async () => {
     if (!pageId || !spaceId) return
     setRunning(true)
@@ -158,6 +171,20 @@ function RunnableCodeView({
           ) : null}
           <Button
             type="button"
+            size="icon"
+            variant="ghost"
+            className="size-6 text-muted-foreground [&_svg]:size-3.5"
+            aria-label={output.popped ? 'Show output window' : 'Pop out output'}
+            onClick={() => {
+              if (node.attrs.blockId !== blockId) updateAttributes({ blockId })
+              if (output.popped) output.show()
+              else output.pop()
+            }}
+          >
+            <SquareArrowOutUpRight />
+          </Button>
+          <Button
+            type="button"
             size="sm"
             className={cn('h-7 shadow-none', RUN_ACCENT[accent])}
             disabled={running || !source.trim()}
@@ -180,7 +207,36 @@ function RunnableCodeView({
           onRun={() => void onRun()}
         />
       </div>
-      {run ? (
+      {output.popped ? (
+        <div
+          className="flex items-center justify-between gap-3 border-t border-border/60 bg-sidebar/50 px-3 py-2"
+          contentEditable={false}
+        >
+          <p className="text-[12px] text-muted-foreground">Output is in its own window.</p>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground [&_svg]:size-3.5"
+              aria-label="Show output window"
+              onClick={output.show}
+            >
+              <SquareArrowOutUpRight />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground [&_svg]:size-3.5"
+              aria-label="Dock output"
+              onClick={output.dock}
+            >
+              <PanelBottom />
+            </Button>
+          </div>
+        </div>
+      ) : run ? (
         <div className="border-t border-border/60 bg-sidebar/50" contentEditable={false}>
           <RunOutput run={run} />
         </div>

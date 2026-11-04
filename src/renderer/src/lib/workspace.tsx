@@ -5,6 +5,8 @@ import { api } from '@/lib/rpc'
 import { DESK_PAGE_ID, buildDeskPage, isDeskPageId } from '@/lib/desk'
 import { GUIDE_PAGE_ID, buildGuidePage, isGuidePageId } from '@/lib/guide'
 import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
+import { formatJsonText } from '@shared/json-text'
+import { defaultPageTitle } from '@shared/titles'
 import { collectPages } from '@/lib/pages'
 import {
   blockText,
@@ -106,6 +108,7 @@ type WorkspaceContextValue = {
     options?: SelectPageOptions
   ) => Promise<void>
   importCsv: (spaceId: string, options?: SelectPageOptions) => Promise<void>
+  pasteJsonFromClipboard: (spaceId: string, options?: SelectPageOptions) => Promise<void>
   duplicateSpace: (id: string) => Promise<void>
   duplicateFolder: (id: string) => Promise<void>
   duplicatePage: (id: string) => Promise<void>
@@ -737,6 +740,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     [patchPage]
   )
 
+  const pasteJsonFromClipboard = useCallback(
+    async (nextSpaceId: string, options?: SelectPageOptions) => {
+      let formatted: string
+      try {
+        formatted = formatJsonText(await navigator.clipboard.readText())
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Clipboard is not JSON')
+        return
+      }
+      if (page?.type === 'json' && page.spaceId === nextSpaceId) {
+        await savePageContent(page.id, formatted)
+        return
+      }
+      await createPage(nextSpaceId, 'json', defaultPageTitle('json'), formatted, options)
+    },
+    [createPage, page, savePageContent]
+  )
+
   const savePageDescription = useCallback(
     async (id: string, description: string) => {
       if (isLockedPageId(id)) return
@@ -1119,6 +1140,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       createFolder,
       createPage,
       importCsv,
+      pasteJsonFromClipboard,
       duplicateSpace,
       duplicateFolder,
       duplicatePage,
@@ -1162,6 +1184,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       restorePageVersion,
       importBackup,
       importCsv,
+      pasteJsonFromClipboard,
       importSpace,
       moveFolder,
       movePage,
