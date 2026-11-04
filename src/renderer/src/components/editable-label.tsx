@@ -4,12 +4,15 @@ import { cn } from '@/lib/utils'
 type EditableLabelProps = {
   value: string
   className?: string
+  /** When true, double-click does not start a rename (for example on a locked page). */
+  disabled?: boolean
   onCommit: (value: string) => void
 }
 
 export function EditableLabel({
   value,
   className,
+  disabled = false,
   onCommit
 }: EditableLabelProps): React.JSX.Element {
   const [editing, setEditing] = useState(false)
@@ -19,11 +22,12 @@ export function EditableLabel({
     if (!editing) setDraft(value)
   }, [editing, value])
 
-  if (!editing) {
+  if (!editing || disabled) {
     return (
       <span
         className={cn('min-w-0 truncate', className)}
         onDoubleClick={(event) => {
+          if (disabled) return
           event.stopPropagation()
           setEditing(true)
         }}

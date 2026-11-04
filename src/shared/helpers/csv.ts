@@ -106,7 +106,7 @@ export class AmbiguousPageError extends Error {
   /** `count` is the number of pages matched; `matches` lists each distinct full path once. */
   constructor(spec: string, label: string, matches: string[], count = matches.length) {
     const shared =
-      matches.length < count ? ' Some share a path; rename one to tell them apart.' : ''
+      matches.length < count ? '. Some share a path; rename one to tell them apart.' : ''
     super(
       `"${spec}" matches ${count} ${label} pages. Use the full path: ${matches
         .map((match) => `"${match}"`)

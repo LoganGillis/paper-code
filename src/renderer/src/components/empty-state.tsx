@@ -6,17 +6,20 @@ export function EmptyState({
   icon: Icon,
   action,
   size = 'sm',
-  className
+  className,
+  style
 }: {
   children: React.ReactNode
   icon?: React.ComponentType<{ className?: string }>
   action?: React.ReactNode
   size?: 'xs' | 'sm'
   className?: string
+  style?: React.CSSProperties
 }): React.JSX.Element {
   return (
     <div
       role="status"
+      style={style}
       className={cn(
         'flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center text-muted-foreground',
         size === 'xs' ? 'text-[12px]' : 'text-sm',

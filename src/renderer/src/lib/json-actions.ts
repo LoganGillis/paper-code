@@ -86,3 +86,29 @@ export async function resolveJsonFormat(
   })
   return choice === 'json' ? result.value : null
 }
+
+/**
+ * The content for a page opened from a JSON file. Exact JSON is formatted; JSON that formatting
+ * would change (big numbers, duplicate keys, surrounding text) asks first, and keeps the file's
+ * original text unless the user picks the formatted version. Invalid JSON is kept as it is so
+ * the editor can mark the error. Returns null when the user cancels.
+ */
+export async function jsonFileContent(raw: string, preview: JsonPreview): Promise<string | null> {
+  let result: ReturnType<typeof formatJsonText>
+  try {
+    result = formatJsonText(raw)
+  } catch {
+    return raw
+  }
+  if (result.exact) return result.value
+  const choice = await preview({
+    result,
+    title: 'Open this JSON?',
+    description: 'Formatting would change this file. Keep the original text to open it as it is.',
+    jsonLabel: 'Use formatted JSON',
+    textLabel: 'Keep original text'
+  })
+  if (choice === 'json') return result.value
+  if (choice === 'text') return raw
+  return null
+}

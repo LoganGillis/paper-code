@@ -237,10 +237,14 @@ export function applySqlMigrations(
     )
 
     // 0.1.3 recorded Prisma files as applied while skipping `-- CreateTable` / `-- AlterTable` bodies.
+    // `legacyRepair` is true only when such a database was found and is being repaired.
+    let legacyRepair = false
     if (!tableExists(db, 'Space')) {
+      legacyRepair = applied.size > 0
       db.exec('DELETE FROM _migrations')
       applied.clear()
     } else if (tableExists(db, 'Page') && !columnExists(db, 'Page', 'deletedAt')) {
+      legacyRepair = true
       forgetMigration(db, applied, '20260819120000_trash_lock_history')
     }
 
@@ -263,8 +267,8 @@ export function applySqlMigrations(
 
     ensureSchema(db)
     if (replayError) {
-      // A 0.1.3 database can be repaired by ensureSchema; anything else stops the launch.
-      if (!pageReady(db)) throw replayError
+      // Only a 0.1.3 database that ensureSchema repaired may continue; anything else stops the launch.
+      if (!legacyRepair || !pageReady(db)) throw replayError
       console.error('A migration failed; the schema was repaired instead', replayError)
     }
   } finally {

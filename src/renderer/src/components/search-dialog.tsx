@@ -1,5 +1,6 @@
 import type { FolderNode, PageSummary, SpaceTree } from '@shared/api'
-import { displayTitle } from '@shared/titles'
+import { PAGE_TYPES } from '@shared/page-types'
+import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { IconBadge } from '@/components/icon-picker'
 import { TypeBadge } from '@/components/type-badge'
 import {
@@ -12,6 +13,9 @@ import {
 } from '@/components/ui/command'
 import { useRef } from 'react'
 import { wantsNewTab } from '@/lib/platform'
+import { NamedIcon } from '@/lib/lucide-icons'
+import { newMenuEntries } from '@/lib/new-menu'
+import { errorText, showError } from '@/lib/notify'
 import { useWorkspace } from '@/lib/workspace'
 
 type SearchHit =
@@ -74,7 +78,20 @@ export function SearchDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }): React.JSX.Element {
-  const { trees, selectPage, selectFolder, toggleSpace, openSpaceIds } = useWorkspace()
+  const {
+    trees,
+    selectPage,
+    selectFolder,
+    toggleSpace,
+    openSpaceIds,
+    spaceId,
+    spaces: allSpaces,
+    createPage
+  } = useWorkspace()
+  const targetSpace = spaceId ?? allSpaces[0]?.id ?? null
+  const creates = newMenuEntries().flatMap((entry) =>
+    entry.action.kind === 'create' ? [{ ...entry, type: entry.action.type }] : []
+  )
   const openInNewTab = useRef(false)
   const items = Object.values(trees).flatMap(collectHits)
   const pages = items.filter((item) => item.kind === 'page')
@@ -108,6 +125,25 @@ export function SearchDialog({
             </CommandItem>
           ))}
         </CommandGroup>
+        {targetSpace ? (
+          <CommandGroup heading="New">
+            {creates.map((entry) => (
+              <CommandItem
+                key={entry.key}
+                value={`${entry.label} create`}
+                onSelect={() => {
+                  onOpenChange(false)
+                  void createPage(targetSpace, entry.type, defaultPageTitle(entry.type)).catch(
+                    (cause) => showError(errorText(cause, 'Could not create the page'))
+                  )
+                }}
+              >
+                <NamedIcon name={PAGE_TYPES[entry.type].icon} className="size-3.5" />
+                <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ) : null}
         {folders.length > 0 ? (
           <CommandGroup heading="Folders">
             {folders.map((item) => (

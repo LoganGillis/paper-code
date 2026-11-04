@@ -5,8 +5,7 @@ import { api } from '@/lib/rpc'
 import { DESK_PAGE_ID, buildDeskPage, isDeskPageId } from '@/lib/desk'
 import { GUIDE_PAGE_ID, buildGuidePage, isGuidePageId } from '@/lib/guide'
 import { buildGuideDataPages, isGuideDataPageId } from '@shared/guide-data'
-import { formatJsonText } from '@shared/json-text'
-import { resolveJsonPaste } from '@/lib/json-actions'
+import { jsonFileContent, resolveJsonPaste } from '@/lib/json-actions'
 import { useJsonPreview } from '@/lib/json-preview'
 import { clearError, errorText, showError, showUndo } from '@/lib/notify'
 import { defaultPageTitle } from '@shared/titles'
@@ -20,7 +19,11 @@ import {
   writeRunBlock
 } from '@/lib/run-block'
 
-export type SelectPageOptions = { newTab?: boolean }
+export type SelectPageOptions = {
+  newTab?: boolean
+  /** Where a new page goes; leave it out for the selected folder in that space. */
+  folderId?: string | null
+}
 
 const SPACE_KEY = 'paper.spaceId'
 const PAGE_KEY = 'paper.activePageId'
@@ -98,7 +101,7 @@ type WorkspaceContextValue = {
   changePageType: (id: string, type: PageType) => Promise<void>
   selectFolder: (spaceId: string, folderId: string | null) => void
   createSpace: (name: string) => Promise<void>
-  createFolder: (spaceId: string, name: string) => Promise<void>
+  createFolder: (spaceId: string, name: string, parentId?: string | null) => Promise<void>
   createPage: (
     spaceId: string,
     type: PageType,
@@ -621,10 +624,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   )
 
   const createFolder = useCallback(
-    async (nextSpaceId: string, name: string) => {
+    async (nextSpaceId: string, name: string, parentId?: string | null) => {
       const folder = await api.folders.create({
         spaceId: nextSpaceId,
-        parentId: spaceId === nextSpaceId ? activeFolderId : null,
+        parentId:
+          parentId !== undefined ? parentId : spaceId === nextSpaceId ? activeFolderId : null,
         name
       })
       setActiveFolderId(folder.id)
@@ -644,7 +648,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     ) => {
       const created = await api.pages.create({
         spaceId: nextSpaceId,
-        folderId: spaceId === nextSpaceId ? activeFolderId : null,
+        folderId:
+          options?.folderId !== undefined
+            ? options.folderId
+            : spaceId === nextSpaceId
+              ? activeFolderId
+              : null,
         type,
         title,
         content
@@ -661,19 +670,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       const picked = await api.app.pickCsv()
       if (!picked) return
       if (picked.type === 'json') {
-        let content = picked.content
-        try {
-          content = formatJsonText(picked.content).value
-        } catch {
-          // Keep the file as it is; the editor marks the error.
-        }
+        const content = await jsonFileContent(picked.content, preview)
+        if (content == null) return
         await createPage(nextSpaceId, 'json', picked.name, content, options)
       } else {
         await createPage(nextSpaceId, 'csv', picked.name, picked.content, options)
       }
       clearError()
     },
-    [createPage]
+    [createPage, preview]
   )
 
   const duplicateSpace = useCallback(
@@ -784,7 +789,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const updatePageAppearance = useCallback(
     async (id: string, appearance: { icon: IconName; iconColor: IconColorId }) => {
       if (isLockedPageId(id)) return
-      const updated = await api.pages.update({ id, ...appearance })
+      let updated: Page
+      try {
+        updated = await api.pages.update({ id, ...appearance })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not change the icon'))
+        return
+      }
       storePage(updated)
       setPage((current) => (current?.id === id ? updated : current))
       await refreshTree(updated.spaceId)
@@ -794,7 +805,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const deleteSpace = useCallback(
     async (id: string) => {
-      await api.spaces.delete({ id })
+      try {
+        await api.spaces.delete({ id })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not delete the space'))
+        return
+      }
       setTabs((current) => {
         const removed = current
           .filter((tab) => tab.spaceId === id && !isDeskPageId(tab.pageId))
@@ -853,7 +869,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const archivePage = useCallback(
     async (id: string) => {
       if (isLockedPageId(id)) return
-      const updated = await api.pages.update({ id, archived: true })
+      let updated: Page
+      try {
+        updated = await api.pages.update({ id, archived: true })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not archive the page'))
+        return
+      }
       dropPages([id])
       setTabs((current) => {
         const host = spaceId ?? spaces[0]?.id ?? ''
@@ -885,7 +907,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const unarchivePage = useCallback(
     async (id: string) => {
-      const updated = await api.pages.update({ id, archived: false })
+      let updated: Page
+      try {
+        updated = await api.pages.update({ id, archived: false })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not unarchive the page'))
+        return
+      }
       storePage(updated)
       await refreshTree(updated.spaceId)
     },
@@ -965,10 +993,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
   const updatePageFlags = useCallback(
     async (id: string, flags: { locked?: boolean; spellcheck?: boolean }) => {
       if (isLockedPageId(id)) return
-      const updated = await api.pages.update({ id, ...flags })
+      let updated: Page
+      try {
+        updated = await api.pages.update({ id, ...flags })
+      } catch (cause) {
+        showError(errorText(cause, 'Could not update the page'))
+        return
+      }
       storePage(updated)
+      // The tree's lock flag drives its menus and drag; refresh it so they follow at once.
+      await refreshTree(updated.spaceId)
     },
-    [storePage]
+    [refreshTree, storePage]
   )
 
   const restorePageVersion = useCallback(
@@ -1027,8 +1063,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         return current
       })
       if (spaceForPage) await refreshTree(spaceForPage)
+      showUndo('Moved to trash', () => restorePage(id))
     },
-    [dropPages, openDesk, page, refreshTree, spaceId, spaces]
+    [dropPages, openDesk, page, refreshTree, restorePage, spaceId, spaces]
   )
 
   const deletePageRef = useRef(deletePage)

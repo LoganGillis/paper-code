@@ -8,7 +8,17 @@ import {
   uniqueTitle
 } from './page-rules'
 
-const locked = { title: 'T', content: 'c', description: 'd', type: 'json', locked: true }
+const locked = {
+  title: 'T',
+  content: 'c',
+  description: 'd',
+  type: 'json',
+  locked: true,
+  icon: 'FileText',
+  iconColor: 'slate',
+  archived: false,
+  spellcheck: true
+}
 
 describe('assertEditable', () => {
   it('blocks content, title, description, and type changes on a locked page', () => {
@@ -21,6 +31,16 @@ describe('assertEditable', () => {
   it('refuses to unlock and edit in one call', () => {
     expect(() => assertEditable(locked, { locked: false, content: 'x' })).toThrow(/on its own/)
     expect(() => assertEditable(locked, { locked: false, title: 'x' })).toThrow(/on its own/)
+    expect(() => assertEditable(locked, { locked: false, icon: 'Star' })).toThrow(/on its own/)
+    expect(() => assertEditable(locked, { locked: false, archived: true })).toThrow(/on its own/)
+  })
+
+  it('blocks icon, colour, archive, and spellcheck changes on a locked page', () => {
+    expect(() => assertEditable(locked, { archived: true })).toThrow(/locked/)
+    expect(() => assertEditable(locked, { icon: 'Star' })).toThrow(/locked/)
+    expect(() => assertEditable(locked, { iconColor: 'red' })).toThrow(/locked/)
+    expect(() => assertEditable(locked, { spellcheck: false })).toThrow(/locked/)
+    expect(() => assertEditable(locked, { icon: 'FileText', archived: false })).not.toThrow()
   })
 
   it('allows unlocking, unchanged saves, and unlocked pages', () => {
@@ -28,6 +48,14 @@ describe('assertEditable', () => {
     expect(() => assertEditable(locked, { locked: false, content: 'c' })).not.toThrow()
     expect(() => assertEditable(locked, { content: 'c' })).not.toThrow()
     expect(() => assertEditable({ ...locked, locked: false }, { content: 'x' })).not.toThrow()
+  })
+
+  it('refuses to lock a page in the trash', () => {
+    const trashed = { ...locked, locked: false, deletedAt: new Date() }
+    expect(() => assertEditable(trashed, { locked: true })).toThrow(
+      'Restore this page from the trash before locking it.'
+    )
+    expect(() => assertEditable({ ...trashed, deletedAt: null }, { locked: true })).not.toThrow()
   })
 })
 
@@ -114,7 +142,7 @@ describe('folder delete', () => {
       '"Top" has a locked page, "Plan". Unlock it to delete the folder.'
     )
     expect(tx.page.findFirst).toHaveBeenCalledWith({
-      where: { folderId: { in: ['a', 'b', 'c'] }, locked: true },
+      where: { folderId: { in: ['a', 'b', 'c'] }, locked: true, deletedAt: null },
       select: { title: true }
     })
     expect(tx.page.updateMany).not.toHaveBeenCalled()

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, KeyRound, Lock, Plus, ShieldAlert } from 'lucide-react'
 import { ICON_ACCENT } from '@shared/icons'
 import type { SecretSummary, Space } from '@shared/api'
+import { MIN_REDACT_LENGTH } from '@shared/redact'
 import { IconBadge } from '@/components/icon-picker'
 import { Button } from '@/components/ui/button'
 import {
@@ -319,6 +320,10 @@ export function SecretsDialog({
                     placeholder="Paste the key"
                     disabled={!sealed}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Output hides every match of a value {MIN_REDACT_LENGTH}+ characters long, so a
+                    short value like &quot;abc&quot; is hidden wherever it appears.
+                  </p>
                 </div>
                 {error ? <p className="text-sm text-destructive">{error}</p> : null}
                 <div className="flex justify-end">

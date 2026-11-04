@@ -92,10 +92,12 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
             {page.locked ? 'Unlock page' : 'Lock page'}
           </DropdownMenuItem>
           <DropdownMenuItem
+            disabled={page.locked}
             onSelect={() => void updatePageFlags(page.id, { spellcheck: !page.spellcheck })}
           >
             <SpellCheck className="size-3.5" />
             {page.spellcheck ? 'Disable spellcheck' : 'Enable spellcheck'}
+            {page.locked ? <LockHint>{lockHint('change')}</LockHint> : null}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setHistoryOpen(true)}>
             <History className="size-3.5" />
@@ -109,14 +111,16 @@ export function PageActions({ page }: { page: Page }): React.JSX.Element | null 
           ) : null}
           <DropdownMenuSeparator />
           {page.archived ? (
-            <DropdownMenuItem onSelect={() => void unarchivePage(page.id)}>
+            <DropdownMenuItem disabled={page.locked} onSelect={() => void unarchivePage(page.id)}>
               <ArchiveRestore className="size-3.5" />
               Unarchive
+              {page.locked ? <LockHint>{lockHint('unarchive')}</LockHint> : null}
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem onSelect={() => void archivePage(page.id)}>
+            <DropdownMenuItem disabled={page.locked} onSelect={() => void archivePage(page.id)}>
               <Archive className="size-3.5" />
               Archive
+              {page.locked ? <LockHint>{lockHint('archive')}</LockHint> : null}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem

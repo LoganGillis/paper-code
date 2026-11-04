@@ -39,7 +39,7 @@ import {
   trashFolderTree,
   uniqueTitle
 } from './page-rules'
-import { lockedInFolderMessage } from '../shared/locks'
+import { lockedInFolderMessage, lockedInSpaceMessage } from '../shared/locks'
 
 const idInput = z.object({ id: z.string().min(1) })
 const pageTypes = PAGE_TYPE_IDS
@@ -377,7 +377,8 @@ export const procedures: AppApi = {
   app: {
     getConfig: async () => {
       const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      await getPrisma().page.deleteMany({ where: { deletedAt: { lt: cutoff } } })
+      // Locked pages are never purged, even from the trash.
+      await getPrisma().page.deleteMany({ where: { deletedAt: { lt: cutoff }, locked: false } })
       return {
         name: app.getName(),
         version: app.getVersion(),
@@ -469,7 +470,15 @@ export const procedures: AppApi = {
     },
     delete: async (input) => {
       const data = idInput.parse(input)
-      await getPrisma().space.delete({ where: { id: data.id } })
+      await getPrisma().$transaction(async (tx) => {
+        const space = await tx.space.findUniqueOrThrow({ where: { id: data.id } })
+        const locked = await tx.page.findFirst({
+          where: { spaceId: space.id, locked: true, deletedAt: null },
+          select: { title: true }
+        })
+        if (locked) throw new Error(lockedInSpaceMessage(space.name, locked.title))
+        await tx.space.delete({ where: { id: space.id } })
+      })
     },
     duplicate: async (input) => {
       const data = idInput.parse(input)
@@ -619,38 +628,42 @@ export const procedures: AppApi = {
           beforeId: z.string().min(1).nullable().optional()
         })
         .parse(input)
-      const prisma = getPrisma()
-      const folder = await prisma.folder.findUniqueOrThrow({ where: { id: data.id } })
-      const parentId = data.parentId === undefined ? folder.parentId : data.parentId
-      if (parentId === folder.id) throw new Error('A folder cannot go inside itself.')
-      if (parentId !== folder.parentId) {
-        const all = await prisma.folder.findMany({ where: { spaceId: folder.spaceId } })
-        const locked = await prisma.page.findFirst({
-          where: { folderId: { in: folderSubtree(all, folder.id) }, locked: true },
-          select: { title: true }
+      // The lock check and the move share one transaction, so a page locked meanwhile still counts.
+      await getPrisma().$transaction(async (tx) => {
+        const folder = await tx.folder.findUniqueOrThrow({ where: { id: data.id } })
+        const parentId = data.parentId === undefined ? folder.parentId : data.parentId
+        if (parentId === folder.id) throw new Error('A folder cannot go inside itself.')
+        if (parentId !== folder.parentId) {
+          const all = await tx.folder.findMany({ where: { spaceId: folder.spaceId } })
+          const locked = await tx.page.findFirst({
+            where: {
+              folderId: { in: folderSubtree(all, folder.id) },
+              locked: true,
+              deletedAt: null
+            },
+            select: { title: true }
+          })
+          if (locked) throw new Error(lockedInFolderMessage(folder.name, locked.title, 'move'))
+        }
+        await tx.folder.update({ where: { id: folder.id }, data: { parentId } })
+        const siblings = await tx.folder.findMany({
+          where: { spaceId: folder.spaceId, parentId },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
         })
-        if (locked) throw new Error(lockedInFolderMessage(folder.name, locked.title, 'move'))
-      }
-      await prisma.folder.update({ where: { id: folder.id }, data: { parentId } })
-      const siblings = await prisma.folder.findMany({
-        where: { spaceId: folder.spaceId, parentId },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
+        const rest = siblings.filter((item) => item.id !== folder.id)
+        const at =
+          data.beforeId != null
+            ? Math.max(
+                0,
+                rest.findIndex((item) => item.id === data.beforeId)
+              )
+            : rest.length
+        const insertAt = data.beforeId && at < 0 ? rest.length : at
+        rest.splice(insertAt, 0, folder)
+        for (const [index, item] of rest.entries()) {
+          await tx.folder.update({ where: { id: item.id }, data: { sortOrder: index } })
+        }
       })
-      const rest = siblings.filter((item) => item.id !== folder.id)
-      const at =
-        data.beforeId != null
-          ? Math.max(
-              0,
-              rest.findIndex((item) => item.id === data.beforeId)
-            )
-          : rest.length
-      const insertAt = data.beforeId && at < 0 ? rest.length : at
-      rest.splice(insertAt, 0, folder)
-      await Promise.all(
-        rest.map((item, index) =>
-          prisma.folder.update({ where: { id: item.id }, data: { sortOrder: index } })
-        )
-      )
     }
   },
   pages: {

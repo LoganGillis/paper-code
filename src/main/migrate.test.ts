@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
@@ -245,5 +253,36 @@ test('a replayed 0.1.3 migration rethrows anything but the known already-applied
     assert.deepEqual(ids, ['001_base'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('an up-to-date database stops on a broken new migration instead of being repaired', () => {
+  const cases = [
+    'ALTER TABLE "Page" ADD COLUMN "x1" TEXT;\nTHIS IS NOT SQL;',
+    'CREATE TABLE "T2" (id TEXT);\nINSERT INTO "NoSuchTable" VALUES (1);',
+    'CREATE TABLE "Page" (id TEXT);\nSELECT bogus FROM;'
+  ]
+  for (const sql of cases) {
+    const dir = mkdtempSync(join(tmpdir(), 'paper-migrate-current-'))
+    const migrations = join(dir, 'migrations')
+    cpSync(migrationsDir, migrations, { recursive: true })
+    const databasePath = join(dir, 'app.db')
+    try {
+      applySqlMigrations(databasePath, [migrations])
+      mkdirSync(join(migrations, '99999999_broken'))
+      writeFileSync(join(migrations, '99999999_broken', 'migration.sql'), sql)
+      assert.throws(() => applySqlMigrations(databasePath, [migrations]))
+      const db = new Database(databasePath)
+      const ids = (db.prepare('SELECT id FROM _migrations').all() as { id: string }[]).map(
+        (row) => row.id
+      )
+      const pageColumns = columnNames(db, 'Page')
+      db.close()
+      assert.ok(pageColumns.includes('deletedAt'))
+      assert.ok(!pageColumns.includes('x1'))
+      assert.ok(!ids.includes('99999999_broken'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   }
 })

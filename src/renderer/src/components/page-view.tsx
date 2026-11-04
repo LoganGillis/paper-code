@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorView } from '@codemirror/view'
 import {
   ArrowLeft,
@@ -18,8 +18,10 @@ import { PAGE_TYPES } from '@shared/page-types'
 import type { Page } from '@shared/api'
 import { useWorkspace } from '@/lib/workspace'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
 import { CodeEditor } from '@/components/code-editor'
-import { jumpTo } from '@/lib/editor-jump'
+import { createDebouncer, type DebouncedSave } from '@/lib/debounced-save'
+import { jumpTo, replaceDoc } from '@/lib/editor-jump'
 import { resolveJsonFormat, resolveJsonPaste } from '@/lib/json-actions'
 import { useJsonPreview } from '@/lib/json-preview'
 import { clearError, errorText, showError, showUndo } from '@/lib/notify'
@@ -117,21 +119,15 @@ function DescriptionField({
   )
 }
 
-function useDebouncedSaver(pageId: string, save: (id: string, content: string) => Promise<void>) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current)
-    }
-  }, [pageId])
-
-  return (content: string) => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => {
-      void save(pageId, content)
-    }, 400)
-  }
+function useDebouncedSaver(
+  pageId: string,
+  save: (id: string, content: string) => Promise<void>
+): DebouncedSave {
+  const debouncer = useMemo(() => createDebouncer(400), [])
+  useEffect(() => () => debouncer.cancel(), [debouncer, pageId])
+  return Object.assign((content: string) => debouncer.run(() => void save(pageId, content)), {
+    cancel: debouncer.cancel
+  })
 }
 
 function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.Element {
@@ -175,11 +171,19 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
     (next: string, message: string) => {
       const previous = source
       setSource(next)
+      replaceDoc(jsonViewRef.current, next)
       saveContent(next)
       clearError()
       showUndo(message, async () => {
+        // Drop the pending save of `next`, or it lands after this and redoes the change.
+        saveContent.cancel()
         setSource(previous)
-        await savePageContent(page.id, previous)
+        replaceDoc(jsonViewRef.current, previous)
+        try {
+          await savePageContent(page.id, previous)
+        } catch (cause) {
+          showError(errorText(cause, 'Could not undo'))
+        }
       })
     },
     [page.id, saveContent, savePageContent, source]
@@ -409,7 +413,7 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
               Format
             </EditorBarButton>
           </EditorBar>
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             <CodeEditor
               active={active}
               accent={page.iconColor}
@@ -426,6 +430,28 @@ function PagePane({ page, active }: { page: Page; active: boolean }): React.JSX.
                 saveContent(content)
               }}
             />
+            {!source.trim() ? (
+              <EmptyState
+                icon={Braces}
+                className="pointer-events-none absolute inset-0"
+                action={
+                  page.locked ? null : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="pointer-events-auto"
+                      onClick={() => void pasteJson()}
+                    >
+                      <ClipboardPaste className="size-3.5" />
+                      Paste JSON
+                    </Button>
+                  )
+                }
+              >
+                This JSON page is empty. Type or paste some JSON.
+              </EmptyState>
+            ) : null}
           </div>
         </div>
       ) : null}

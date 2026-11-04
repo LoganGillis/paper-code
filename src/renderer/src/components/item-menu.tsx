@@ -27,6 +27,7 @@ export function ItemMenu({
   onRestore,
   onSecrets,
   deleteHint,
+  archiveHint,
   className
 }: {
   onDuplicate: () => void
@@ -38,6 +39,8 @@ export function ItemMenu({
   onSecrets?: () => void
   /** When set, Delete is disabled and shows this reason (e.g. "Unlock to delete"). */
   deleteHint?: string
+  /** When set, Archive and Unarchive are disabled and show this reason. */
+  archiveHint?: string
   className?: string
 }): React.JSX.Element {
   return (
@@ -76,15 +79,17 @@ export function ItemMenu({
           Copy
         </DropdownMenuItem>
         {onArchive ? (
-          <DropdownMenuItem onSelect={onArchive}>
+          <DropdownMenuItem disabled={Boolean(archiveHint)} onSelect={onArchive}>
             <Archive className="size-3.5" />
             Archive
+            {archiveHint ? <LockHint>{archiveHint}</LockHint> : null}
           </DropdownMenuItem>
         ) : null}
         {onUnarchive ? (
-          <DropdownMenuItem onSelect={onUnarchive}>
+          <DropdownMenuItem disabled={Boolean(archiveHint)} onSelect={onUnarchive}>
             <ArchiveRestore className="size-3.5" />
             Unarchive
+            {archiveHint ? <LockHint>{archiveHint}</LockHint> : null}
           </DropdownMenuItem>
         ) : null}
         {onRestore ? (

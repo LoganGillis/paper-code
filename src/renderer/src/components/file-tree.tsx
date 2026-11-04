@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  Archive,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -16,7 +17,7 @@ import { defaultPageTitle, displayTitle } from '@shared/titles'
 import { TypeBadge } from '@/components/type-badge'
 import { cn } from '@/lib/utils'
 import { EditableLabel } from '@/components/editable-label'
-import { IconPicker } from '@/components/icon-picker'
+import { IconBadge, IconPicker } from '@/components/icon-picker'
 import { ItemMenu } from '@/components/item-menu'
 import { NewMenuItems } from '@/components/new-menu-items'
 import { useConfirm } from '@/lib/confirm'
@@ -31,6 +32,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import {
@@ -142,6 +146,7 @@ function PageRow({
           }}
           className={cn(
             'group relative flex h-9 items-center gap-1 rounded-md pr-1 text-[13px] transition-colors duration-150',
+            page.locked && 'select-none',
             active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/70',
             dropEdge === 'before' &&
               'before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-foreground/50 before:content-[""]',
@@ -153,6 +158,10 @@ function PageRow({
           {runningPageIds.includes(page.id) ? (
             <span className="inline-flex size-6 items-center justify-center">
               <Spinner className="size-3.5" />
+            </span>
+          ) : page.locked ? (
+            <span title={lockHint('change')}>
+              <IconBadge icon={page.icon} color={page.iconColor} className="size-6" />
             </span>
           ) : (
             <IconPicker
@@ -179,6 +188,7 @@ function PageRow({
             <EditableLabel
               value={displayTitle(page.title)}
               className="min-w-0 flex-1"
+              disabled={page.locked}
               onCommit={(title) => void renamePage(page.id, title)}
             />
           </button>
@@ -203,6 +213,9 @@ function PageRow({
                 onRestore={page.deletedAt ? () => void restorePage(page.id) : undefined}
                 onDelete={() => (showTrash ? void purge() : void deletePage(page.id))}
                 deleteHint={page.locked ? lockHint(showTrash ? 'purge' : 'delete') : undefined}
+                archiveHint={
+                  page.locked ? lockHint(page.archived ? 'unarchive' : 'archive') : undefined
+                }
               />
             </div>
           </div>
@@ -242,9 +255,15 @@ function PageRow({
         {page.deletedAt ? (
           <ContextMenuItem onSelect={() => void restorePage(page.id)}>Restore</ContextMenuItem>
         ) : page.archived ? (
-          <ContextMenuItem onSelect={() => void unarchivePage(page.id)}>Unarchive</ContextMenuItem>
+          <ContextMenuItem disabled={page.locked} onSelect={() => void unarchivePage(page.id)}>
+            Unarchive
+            {page.locked ? <LockHint>{lockHint('unarchive')}</LockHint> : null}
+          </ContextMenuItem>
         ) : (
-          <ContextMenuItem onSelect={() => void archivePage(page.id)}>Archive</ContextMenuItem>
+          <ContextMenuItem disabled={page.locked} onSelect={() => void archivePage(page.id)}>
+            Archive
+            {page.locked ? <LockHint>{lockHint('archive')}</LockHint> : null}
+          </ContextMenuItem>
         )}
         <ContextMenuItem
           className="text-destructive focus:text-destructive"
@@ -277,10 +296,15 @@ function FolderRow({
     updateFolderAppearance,
     duplicateFolder,
     moveFolder,
-    movePage
+    movePage,
+    createPage,
+    createFolder,
+    importCsv,
+    pasteJsonFromClipboard
   } = useWorkspace()
   const confirm = useConfirm()
   const lockedInside = firstLockedPage(folder)
+  const into = { folderId: folder.id }
   const removeFolder = async (): Promise<void> => {
     const ok = await confirm({
       title: 'Move this folder to the trash?',
@@ -373,6 +397,24 @@ function FolderRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Plus className="size-3.5" />
+              New
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-48">
+              <NewMenuItems
+                menu="context"
+                onCreate={(type) =>
+                  void createPage(spaceId, type, defaultPageTitle(type), undefined, into)
+                }
+                onPasteJson={() => void pasteJsonFromClipboard(spaceId, into)}
+                onOpenFile={() => void importCsv(spaceId, into)}
+                onNewFolder={() => void createFolder(spaceId, 'Untitled folder', folder.id)}
+              />
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => void duplicateFolder(folder.id)}>
             <CopyPlus className="size-3.5" />
             Duplicate
@@ -388,7 +430,7 @@ function FolderRow({
             onSelect={() => void removeFolder()}
           >
             <Trash2 className="size-3.5" />
-            Delete
+            Move to trash
             {lockedInside ? <LockHint>{lockHint('delete')}</LockHint> : null}
           </ContextMenuItem>
         </ContextMenuContent>
@@ -407,6 +449,15 @@ function FolderRow({
             {folder.pages.map((page) => (
               <PageRow key={page.id} page={page} spaceId={spaceId} depth={depth + 1} />
             ))}
+            {folder.folders.length === 0 && folder.pages.length === 0 ? (
+              <EmptyState
+                size="xs"
+                className="items-start py-1.5 text-left"
+                style={{ paddingLeft: 10 + (depth + 1) * 12 + 8 }}
+              >
+                Empty folder
+              </EmptyState>
+            ) : null}
           </div>
         </div>
       </div>
@@ -423,7 +474,9 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
     return (
       <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
         {trashed.length === 0 ? (
-          <EmptyState size="xs">Nothing in the trash.</EmptyState>
+          <EmptyState size="xs" icon={Trash2}>
+            Nothing in the trash.
+          </EmptyState>
         ) : (
           trashed.map((page) => (
             <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
@@ -437,7 +490,9 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
     return (
       <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
         {archived.length === 0 ? (
-          <EmptyState size="xs">Nothing archived here.</EmptyState>
+          <EmptyState size="xs" icon={Archive}>
+            Nothing archived here.
+          </EmptyState>
         ) : (
           archived.map((page) => (
             <PageRow key={page.id} page={page} spaceId={tree.space.id} depth={0} />
@@ -451,9 +506,7 @@ export function SpaceTreeView({ tree }: { tree: SpaceTree }): React.JSX.Element 
   return (
     <div className="flex min-h-[8rem] flex-col gap-1 pb-2">
       {empty ? (
-        <p className="flex flex-1 items-center justify-center px-3 text-center text-[12px] text-muted-foreground">
-          Create a page to get started.
-        </p>
+        <EmptyState size="xs">Create a page to get started.</EmptyState>
       ) : (
         <>
           {tree.folders.map((folder) => (

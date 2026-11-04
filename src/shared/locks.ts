@@ -1,9 +1,12 @@
-export type LockAction = 'delete' | 'move' | 'purge'
+export type LockAction = 'delete' | 'move' | 'purge' | 'archive' | 'unarchive' | 'change'
 
 const VERB: Record<LockAction, string> = {
   delete: 'delete',
   move: 'move',
-  purge: 'delete forever'
+  purge: 'delete forever',
+  archive: 'archive',
+  unarchive: 'unarchive',
+  change: 'change'
 }
 
 /** The short hint shown on a disabled menu item, e.g. "Unlock to delete". */
@@ -23,4 +26,9 @@ export function lockedInFolderMessage(
   action: 'delete' | 'move' = 'delete'
 ): string {
   return `"${folder}" has a locked page, "${page || 'Untitled'}". Unlock it to ${action} the folder.`
+}
+
+/** Why a space with a locked page cannot be deleted. */
+export function lockedInSpaceMessage(space: string, page: string): string {
+  return `"${space}" has a locked page, "${page || 'Untitled'}". Unlock it to delete the space.`
 }

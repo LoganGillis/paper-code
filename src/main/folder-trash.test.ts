@@ -94,3 +94,41 @@ test('deleting a folder with a locked page inside refuses and changes nothing', 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a locked page already in the trash does not stop its old folder being deleted', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'paper-folder-trashed-lock-'))
+  const databasePath = join(dir, 'app.db')
+  applySqlMigrations(databasePath, [migrationsDir])
+  const prisma = new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url: sqliteFileUrl(databasePath) })
+  })
+  try {
+    const space = await prisma.space.create({ data: { name: 'Workshop' } })
+    const top = await prisma.folder.create({ data: { name: 'Top', spaceId: space.id } })
+    const trashed = await prisma.page.create({
+      data: {
+        title: 'Old',
+        type: 'markdown',
+        spaceId: space.id,
+        folderId: top.id,
+        locked: true,
+        deletedAt: new Date()
+      }
+    })
+    const free = await prisma.page.create({
+      data: { title: 'Free', type: 'markdown', spaceId: space.id, folderId: top.id }
+    })
+
+    await prisma.$transaction((tx) => trashFolderTree(tx, top.id, new Date()))
+
+    assert.equal((await prisma.folder.findMany()).length, 0)
+    const old = await prisma.page.findUniqueOrThrow({ where: { id: trashed.id } })
+    assert.ok(old.deletedAt, 'the locked page stays in the trash')
+    assert.equal(old.locked, true)
+    const moved = await prisma.page.findUniqueOrThrow({ where: { id: free.id } })
+    assert.ok(moved.deletedAt, 'the free page is trashed with the folder')
+  } finally {
+    await prisma.$disconnect()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

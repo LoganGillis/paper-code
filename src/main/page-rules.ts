@@ -7,6 +7,10 @@ type PageEdit = {
   content?: string
   description?: string
   type?: PageType
+  icon?: string
+  iconColor?: string
+  archived?: boolean
+  spellcheck?: boolean
 }
 
 type StoredPage = {
@@ -15,20 +19,38 @@ type StoredPage = {
   description: string
   type: string
   locked: boolean
+  icon?: string
+  iconColor?: string
+  archived?: boolean
+  spellcheck?: boolean
+  deletedAt?: Date | null
 }
 
+const LOCKED_FIELDS = [
+  'title',
+  'content',
+  'description',
+  'type',
+  'icon',
+  'iconColor',
+  'archived',
+  'spellcheck'
+] as const
+
 /**
- * Throws when an update would change a locked page's title, body, description, or type. Unlocking
- * must be its own call: `locked: false` together with any other change is rejected, so one call
- * can never unlock and edit.
+ * Throws when an update would change anything on a locked page: title, body, description, type,
+ * icon, colour, archived, or spellcheck. Unlocking must be its own call: `locked: false` together
+ * with any other change is rejected, so one call can never unlock and edit. A page in the trash
+ * cannot be locked; restore it first.
  */
 export function assertEditable(previous: StoredPage, edit: PageEdit & { locked?: boolean }): void {
+  if (edit.locked === true && !previous.locked && previous.deletedAt) {
+    throw new Error('Restore this page from the trash before locking it.')
+  }
   if (!previous.locked) return
-  const changes =
-    (edit.title !== undefined && edit.title !== previous.title) ||
-    (edit.content !== undefined && edit.content !== previous.content) ||
-    (edit.description !== undefined && edit.description !== previous.description) ||
-    (edit.type !== undefined && edit.type !== previous.type)
+  const changes = LOCKED_FIELDS.some(
+    (field) => edit[field] !== undefined && edit[field] !== previous[field]
+  )
   if (!changes) return
   if (edit.locked === false) {
     throw new Error('Unlock the page on its own first, then make changes.')
@@ -87,7 +109,7 @@ type FolderTx = {
   }
   page: {
     findFirst: (args: {
-      where: { folderId: { in: string[] }; locked: true }
+      where: { folderId: { in: string[] }; locked: true; deletedAt: null }
       select: { title: true }
     }) => Promise<{ title: string } | null>
     updateMany: (args: {
@@ -106,8 +128,9 @@ export async function trashFolderTree(tx: FolderTx, folderId: string, now: Date)
   const folder = await tx.folder.findUniqueOrThrow({ where: { id: folderId } })
   const all = await tx.folder.findMany({ where: { spaceId: folder.spaceId } })
   const ids = folderSubtree(all, folder.id)
+  // Pages already in the trash don't block; they stay in the trash.
   const locked = await tx.page.findFirst({
-    where: { folderId: { in: ids }, locked: true },
+    where: { folderId: { in: ids }, locked: true, deletedAt: null },
     select: { title: true }
   })
   if (locked) throw new Error(lockedInFolderMessage(folder.name, locked.title))
